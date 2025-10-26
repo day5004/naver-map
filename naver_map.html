@@ -2,490 +2,337 @@
 <html>
 <head>
     <meta charset="UTF-8">
-    <meta http-equiv="X-UA-Compatible" content="IE=edge">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, minimum-scale=1.0, user-scalable=no">
-    <title>네이버 지도 - 만보기 GPS 트래킹</title>
-    <script type="text/javascript" src="https://oapi.map.naver.com/openapi/v3/maps.js?ncpKeyId=0lep6flysx"></script>
-    <script src="https://html2canvas.hertzen.com/dist/html2canvas.min.js"></script>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Naver Map</title>
+    <script type="text/javascript" src="https://openapi.map.naver.com/openapi/v3/maps.js?ncpClientId=4h5ui0cr6w"></script>
     <style>
         * {
             margin: 0;
             padding: 0;
+            box-sizing: border-box;
         }
-        html, body {
-            width: 100%;
-            height: 100%;
-        }
+        
         #map {
-            width: 100%;
-            height: 100%;
+            width: 100vw;
+            height: 100vh;
         }
+        
         .control-panel {
             position: absolute;
             top: 10px;
-            right: 10px;
+            left: 10px;
             background: white;
             padding: 10px;
-            border-radius: 5px;
+            border-radius: 8px;
             box-shadow: 0 2px 6px rgba(0,0,0,0.3);
-            z-index: 100;
-            min-width: 120px;
+            z-index: 1000;
         }
-        .control-panel button {
+        
+        .control-btn {
             display: block;
-            width: 100%;
-            padding: 8px 10px;
+            width: 120px;
+            padding: 8px;
             margin: 5px 0;
-            background: #03c75a;
+            background: #03CF5D;
             color: white;
             border: none;
-            border-radius: 3px;
+            border-radius: 4px;
             cursor: pointer;
             font-size: 14px;
         }
-        .control-panel button:hover {
-            background: #02b351;
+        
+        .control-btn:hover {
+            background: #00b350;
         }
-        .control-panel button.active {
-            background: #ff6b6b;
-        }
-        .control-panel button.capture {
-            background: #4285F4;
-        }
-        .control-panel button.capture:hover {
-            background: #357ae8;
-        }
+        
         .info-panel {
             position: absolute;
             bottom: 10px;
             left: 10px;
             background: white;
             padding: 10px;
-            border-radius: 5px;
+            border-radius: 8px;
             box-shadow: 0 2px 6px rgba(0,0,0,0.3);
-            z-index: 100;
+            z-index: 1000;
             font-size: 12px;
         }
-        .route-info {
-            position: absolute;
-            top: 10px;
-            left: 10px;
-            background: white;
-            padding: 10px;
-            border-radius: 5px;
-            box-shadow: 0 2px 6px rgba(0,0,0,0.3);
-            z-index: 100;
-            font-size: 14px;
-            display: none;
-        }
-        .route-info.active {
-            display: block;
+        
+        .info-row {
+            margin: 3px 0;
         }
     </style>
 </head>
 <body>
     <div id="map"></div>
-    <div class="route-info" id="routeInfo">
-        <div>이동 거리: <span id="distanceInfo">0</span> m</div>
-        <div>경로 포인트: <span id="pointsInfo">0</span> 개</div>
-        <div>날짜: <span id="dateInfo"></span></div>
-    </div>
+    
     <div class="control-panel">
-        <button onClick="getCurrentLocation()">📍 내 위치</button>
-        <button id="trackBtn" onClick="toggleTracking()">🏃 경로 추적</button>
-        <button onClick="clearPath()">🗑️ 경로 삭제</button>
-        <button onClick="fitMapToRoute()">🔍 전체 경로</button>  <!-- 추가 -->
-        <button onClick="toggleMapType()">🗺️ 지도 타입</button>
-        <button class="capture" onClick="captureMap()">📸 지도 저장</button>
-        <button onClick="debugStatus()">🐛 상태확인</button>
+        <button id="myLocationBtn" class="control-btn">내 위치</button>
+        <button id="startTrackingBtn" class="control-btn">추적 시작</button>
+        <button id="stopTrackingBtn" class="control-btn">추적 중지</button>
+        <button id="clearRouteBtn" class="control-btn">경로 초기화</button>
+        <button id="saveMapBtn" class="control-btn">지도 저장</button>
     </div>
-    <div class="info-panel" id="infoPanel">
-        <div>위도: <span id="latInfo">-</span></div>
-        <div>경도: <span id="lngInfo">-</span></div>
-        <div>정확도: <span id="accInfo">-</span>m</div>
+    
+    <div class="info-panel">
+        <div class="info-row">위도: <span id="lat">0.0000</span></div>
+        <div class="info-row">경도: <span id="lng">0.0000</span></div>
+        <div class="info-row">정확도: <span id="accuracy">N/A</span></div>
+        <div class="info-row">상태: <span id="status">대기중</span></div>
     </div>
 
     <script>
-        // 지도 초기화
-        var mapOptions = {
-            center: new naver.maps.LatLng(37.5666805, 126.9784147),
-            zoom: 16,
-            mapTypeId: naver.maps.MapTypeId.NORMAL,
-            zoomControl: true,
-            zoomControlOptions: {
-                position: naver.maps.Position.TOP_LEFT
+        // 전역 변수
+        let map;
+        let userMarker = null;
+        let routePath = null;
+        let routeCoordinates = [];
+        let isTracking = false;
+        let startMarker = null;
+        let endMarker = null;
+
+        // Unity와 통신하는 브릿지 객체
+        window.NaverMapBridge = {
+            userLocation: null,
+            
+            // Unity에서 위치 업데이트 받기 (플러그인 GPS 데이터)
+            updateLocation: function(lat, lng, accuracy) {
+                console.log('GPS from Plugin:', lat, lng, accuracy);
+                
+                this.userLocation = new naver.maps.LatLng(lat, lng);
+                
+                // 사용자 마커 업데이트
+                if (userMarker) {
+                    userMarker.setPosition(this.userLocation);
+                } else {
+                    userMarker = new naver.maps.Marker({
+                        position: this.userLocation,
+                        map: map,
+                        icon: {
+                            content: '<div style="width:20px;height:20px;background:#4285F4;border-radius:50%;border:3px solid white;box-shadow:0 2px 6px rgba(0,0,0,0.3);"></div>',
+                            anchor: new naver.maps.Point(13, 13)
+                        }
+                    });
+                }
+                
+                // 경로 추적 중이면 경로에 추가
+                if (isTracking && routeCoordinates.length > 0) {
+                    const lastPoint = routeCoordinates[routeCoordinates.length - 1];
+                    const distance = calculateDistance(
+                        lastPoint.lat(), lastPoint.lng(),
+                        lat, lng
+                    );
+                    
+                    // 5미터 이상 이동시 경로 추가
+                    if (distance > 5) {
+                        addRoutePoint(lat, lng);
+                    }
+                }
+                
+                // 정보 패널 업데이트
+                updateInfoPanel(lat, lng, accuracy);
+            },
+            
+            // 지도 이동
+            moveToLocation: function(lat, lng) {
+                if (map) {
+                    map.setCenter(new naver.maps.LatLng(lat, lng));
+                }
+            },
+            
+            // 줌 설정
+            setZoom: function(level) {
+                if (map) {
+                    map.setZoom(level);
+                }
+            },
+            
+            // 경로 추적 시작
+            startTracking: function() {
+                startTracking();
+            },
+            
+            // 경로 추적 중지
+            stopTracking: function() {
+                stopTracking();
+            },
+            
+            // 경로에 점 추가
+            addRoutePoint: function(lat, lng) {
+                addRoutePoint(lat, lng);
             }
         };
 
-        var map = new naver.maps.Map('map', mapOptions);
-        var markers = [];
-        var currentLocationMarker = null;
-        var accuracyCircle = null;
-        var routePath = [];
-        var routePolyline = null;
-        var isTracking = false;
-        var watchId = null;
-        var unityRouteTracking = false;
-        var totalDistance = 0;
-        var trackingStartTime = null;
+        // 지도 초기화
+        function initMap() {
+            const mapOptions = {
+                center: new naver.maps.LatLng(37.5665, 126.9780),
+                zoom: 16,
+                mapTypeControl: false,
+                scaleControl: false,
+                logoControl: false,
+                mapDataControl: false
+            };
 
-        // 거리 계산 함수
+            map = new naver.maps.Map('map', mapOptions);
+            
+            // 지도 준비 완료 알림
+            document.getElementById('status').textContent = 'GPS 대기중';
+        }
+
+        // 경로 추적 시작
+        function startTracking() {
+            if (!isTracking) {
+                isTracking = true;
+                routeCoordinates = [];
+                
+                // 현재 위치를 시작점으로
+                if (window.NaverMapBridge.userLocation) {
+                    routeCoordinates.push(window.NaverMapBridge.userLocation);
+                    
+                    // 시작 마커
+                    startMarker = new naver.maps.Marker({
+                        position: window.NaverMapBridge.userLocation,
+                        map: map,
+                        icon: {
+                            content: '<div style="width:15px;height:15px;background:#00C73C;border-radius:50%;border:2px solid white;"></div>',
+                            anchor: new naver.maps.Point(9, 9)
+                        }
+                    });
+                }
+                
+                document.getElementById('status').textContent = '추적 중';
+                console.log('Route tracking started');
+            }
+        }
+
+        // 경로 추적 중지
+        function stopTracking() {
+            if (isTracking) {
+                isTracking = false;
+                
+                // 종료 마커
+                if (routeCoordinates.length > 0) {
+                    const lastPoint = routeCoordinates[routeCoordinates.length - 1];
+                    endMarker = new naver.maps.Marker({
+                        position: lastPoint,
+                        map: map,
+                        icon: {
+                            content: '<div style="width:15px;height:15px;background:#FF3E3E;border-radius:50%;border:2px solid white;"></div>',
+                            anchor: new naver.maps.Point(9, 9)
+                        }
+                    });
+                }
+                
+                document.getElementById('status').textContent = '추적 중지';
+                console.log('Route tracking stopped');
+            }
+        }
+
+        // 경로에 포인트 추가
+        function addRoutePoint(lat, lng) {
+            const point = new naver.maps.LatLng(lat, lng);
+            routeCoordinates.push(point);
+            
+            // 경로 업데이트
+            updateRoute();
+        }
+
+        // 경로 그리기 업데이트
+        function updateRoute() {
+            if (routePath) {
+                routePath.setMap(null);
+            }
+            
+            if (routeCoordinates.length > 1) {
+                routePath = new naver.maps.Polyline({
+                    map: map,
+                    path: routeCoordinates,
+                    strokeColor: '#4285F4',
+                    strokeOpacity: 0.8,
+                    strokeWeight: 4
+                });
+            }
+        }
+
+        // 경로 초기화
+        function clearRoute() {
+            routeCoordinates = [];
+            isTracking = false;
+            
+            if (routePath) {
+                routePath.setMap(null);
+                routePath = null;
+            }
+            
+            if (startMarker) {
+                startMarker.setMap(null);
+                startMarker = null;
+            }
+            
+            if (endMarker) {
+                endMarker.setMap(null);
+                endMarker = null;
+            }
+            
+            document.getElementById('status').textContent = '경로 초기화됨';
+        }
+
+        // 거리 계산 (미터)
         function calculateDistance(lat1, lng1, lat2, lng2) {
-            var R = 6371000; // 지구 반지름 (미터)
-            var dLat = (lat2 - lat1) * Math.PI / 180;
-            var dLng = (lng2 - lng1) * Math.PI / 180;
-            var a = Math.sin(dLat/2) * Math.sin(dLat/2) +
-                    Math.cos(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) *
-                    Math.sin(dLng/2) * Math.sin(dLng/2);
-            var c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
+            const R = 6371000;
+            const dLat = (lat2 - lat1) * Math.PI / 180;
+            const dLng = (lng2 - lng1) * Math.PI / 180;
+            const a = Math.sin(dLat/2) * Math.sin(dLat/2) +
+                     Math.cos(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) *
+                     Math.sin(dLng/2) * Math.sin(dLng/2);
+            const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
             return R * c;
         }
 
-        // 지도 저장 버튼 클릭시
-function captureMap() {
-    console.log("Capture button clicked");
-    
-    sendToUnity('save_static_map', {
-        message: 'Request from HTML',  // <- 쉼표 추가
-        pointCount: routePath.length,
-        distance: totalDistance
-    });
-    
-    console.log("Message sent to Unity");
-}
-
-        // Unity에서 호출할 수 있는 전역 객체
-        window.NaverMapBridge = {
-            updateLocation: function(lat, lng, accuracy) {
-        console.log(`Received location: ${lat}, ${lng}, accuracy: ${accuracy}`);
-        updateCurrentPosition(lat, lng, accuracy);
-        
-        if (isTracking || unityRouteTracking) {
-            window.addRoutePoint(lat, lng);
-            console.log('Route point added from Unity');
-        }
-    },
-            
-            moveToLocation: function(lat, lng) {
-        var latlng = new naver.maps.LatLng(lat, lng);
-        map.panTo(latlng);
-        console.log(`Map moved to: ${lat}, ${lng}`);
-    },
-    
-    setZoom: function(level) {
-        map.setZoom(level);
-        console.log(`Zoom set to: ${level}`);
-    },
-    
-    startTracking: function() {
-        console.log('Unity called startTracking');
-        window.startRoute();
-    },
-    
-    stopTracking: function() {
-        unityRouteTracking = false;
-        console.log('Route tracking stopped from Unity');
-    },
-    
-    clearTracking: function() {
-        window.clearRoute();
-        console.log('Route cleared from Unity');
-    },
-    
-    captureMap: function() {
-        captureMap();
-    }
-        };
-
-        // Unity에서 호출할 수 있는 경로 함수들
-        window.startRoute = function() {
-            console.log('=== startRoute called ===');
-            unityRouteTracking = true;
-            isTracking = true;  // 추가 필요
-            routePath = [];
-            totalDistance = 0;
-            trackingStartTime = new Date();
-            if (routePolyline) {
-                routePolyline.setMap(null);
-            }
-            // UI 업데이트
-    document.getElementById('trackBtn').classList.add('active');
-    document.getElementById('trackBtn').textContent = '⏹️ 추적 중지';
-    
-    console.log('Route tracking started from Unity');
-    console.log(`Tracking states - isTracking: ${isTracking}, unityRouteTracking: ${unityRouteTracking}`);
+        // 정보 패널 업데이트
+        function updateInfoPanel(lat, lng, accuracy) {
+            document.getElementById('lat').textContent = lat.toFixed(6);
+            document.getElementById('lng').textContent = lng.toFixed(6);
+            document.getElementById('accuracy').textContent = accuracy ? accuracy.toFixed(1) + 'm' : 'N/A';
         }
 
-        window.addRoutePoint = function(lat, lng) {
-            if (!isTracking && !unityRouteTracking) return;
-            
-            var position = new naver.maps.LatLng(lat, lng);
-            
-            // 거리 계산
-            if (routePath.length > 0) {
-                var lastPoint = routePath[routePath.length - 1];
-                var distance = calculateDistance(
-                    lastPoint.lat(), lastPoint.lng(),
-                    lat, lng
-                );
-                if (distance > 2) { // 2미터 이상 이동시만 추가
-                    totalDistance += distance;
-                    routePath.push(position);
-                }
-            } else {
-                routePath.push(position);
-            }
-            
-            if (routePolyline) {
-                routePolyline.setPath(routePath);
-            } else if (routePath.length > 1) {
-                routePolyline = new naver.maps.Polyline({
-                    map: map,
-                    path: routePath,
-                    strokeColor: '#FF0080',
-                    strokeOpacity: 0.8,
-                    strokeWeight: 4,
-                    strokeLineCap: 'round',
-                    strokeLineJoin: 'round'
-                });
-            }
-            
-            console.log('Route point added:', lat, lng, 'Total:', routePath.length, 'Distance:', totalDistance);
-        }
-
-        window.clearRoute = function() {
-            unityRouteTracking = false;
-            routePath = [];
-            totalDistance = 0;
-            if (routePolyline) {
-                routePolyline.setMap(null);
-                routePolyline = null;
-            }
-            console.log('Route cleared from Unity');
-        }
-
-        // 현재 위치 업데이트
-        function updateCurrentPosition(lat, lng, accuracy) {
-            var position = new naver.maps.LatLng(lat, lng);
-            
-            document.getElementById('latInfo').textContent = lat.toFixed(6);
-            document.getElementById('lngInfo').textContent = lng.toFixed(6);
-            document.getElementById('accInfo').textContent = accuracy ? accuracy.toFixed(0) : '-';
-            
-            if (currentLocationMarker) {
-                currentLocationMarker.setMap(null);
-            }
-            if (accuracyCircle) {
-                accuracyCircle.setMap(null);
-            }
-            
-            if (accuracy && accuracy > 0) {
-                accuracyCircle = new naver.maps.Circle({
-                    center: position,
-                    radius: accuracy,
-                    map: map,
-                    strokeColor: '#4285F4',
-                    strokeOpacity: 0.3,
-                    strokeWeight: 1,
-                    fillColor: '#4285F4',
-                    fillOpacity: 0.1
-                });
-            }
-            
-            currentLocationMarker = new naver.maps.Marker({
-                position: position,
-                map: map,
-                icon: {
-                    content: '<div style="position:relative;">' +
-                            '<div style="width:14px;height:14px;background:#4285F4;border:3px solid white;border-radius:50%;box-shadow:0 2px 6px rgba(0,0,0,0.3);"></div>' +
-                            '<div style="position:absolute;width:6px;height:6px;background:white;border-radius:50%;top:50%;left:50%;transform:translate(-50%,-50%);"></div>' +
-                            '</div>',
-                    anchor: new naver.maps.Point(10, 10)
-                },
-                zIndex: 1000
-            });
-            
-            sendToUnity('location_updated', {
-                lat: lat,
-                lng: lng,
-                accuracy: accuracy
-            });
-        }
-
-        function getCurrentLocation() {
-            if (currentLocationMarker) {
-                var position = currentLocationMarker.getPosition();
-                map.setCenter(position);
+        // 버튼 이벤트 리스너
+        document.getElementById('myLocationBtn').addEventListener('click', function() {
+            if (window.NaverMapBridge.userLocation) {
+                map.setCenter(window.NaverMapBridge.userLocation);
                 map.setZoom(17);
-                console.log('Moving to Unity GPS position');
             } else {
-                console.log('No Unity GPS, waiting for data');
-                alert('Unity GPS 데이터를 기다리는 중입니다...');
+                alert('GPS 위치를 받아오는 중입니다...');
             }
-        }
-
-        function toggleTracking() {
-            if (isTracking) {
-                stopTracking();
-            } else {
-                startTracking();
-            }
-        }
-        
-
-        function startTracking() {
-            console.log('startTracking called');
-            
-            isTracking = true;
-            unityRouteTracking = true;
-            totalDistance = 0;
-            trackingStartTime = new Date();
-            
-            document.getElementById('trackBtn').classList.add('active');
-            document.getElementById('trackBtn').textContent = '⏹️ 추적 중지';
-            
-            routePath = [];
-            if (routePolyline) {
-                routePolyline.setMap(null);
-            }
-            
-            sendToUnity('tracking_started', {});
-        }
-
-        function stopTracking() {
-    isTracking = false;
-    unityRouteTracking = false;
-    
-    document.getElementById('trackBtn').classList.remove('active');
-    document.getElementById('trackBtn').textContent = '🏃 경로 추적';
-    
-    // 경로 추적 완료 처리
-    if (routePath.length >= 2) {
-        onTrackingComplete();  // fitMapToRoute() 대신 onTrackingComplete() 호출
-    }
-    
-    sendToUnity('tracking_stopped', {
-        totalPoints: routePath.length,
-        totalDistance: totalDistance
-    });
-}
-
-        function clearPath() {
-            routePath = [];
-            totalDistance = 0;
-            if (routePolyline) {
-                routePolyline.setMap(null);
-                routePolyline = null;
-            }
-            sendToUnity('path_cleared', {});
-        }
-
-        function toggleMapType() {
-            var currentType = map.getMapTypeId();
-            if (currentType === naver.maps.MapTypeId.NORMAL) {
-                map.setMapTypeId(naver.maps.MapTypeId.SATELLITE);
-            } else if (currentType === naver.maps.MapTypeId.SATELLITE) {
-                map.setMapTypeId(naver.maps.MapTypeId.HYBRID);
-            } else {
-                map.setMapTypeId(naver.maps.MapTypeId.NORMAL);
-            }
-        }
-
-        function debugStatus() {
-    var status = 
-        'Tracking: ' + isTracking + '\n' +
-        'Unity Tracking: ' + unityRouteTracking + '\n' +
-        'Route Points: ' + routePath.length + '\n' +
-        'Distance: ' + totalDistance.toFixed(0) + 'm\n' +
-        'Has Marker: ' + (currentLocationMarker != null) + '\n' +
-        'Current Position: ' + (currentLocationMarker ? 
-            currentLocationMarker.getPosition().toString() : 'N/A');
-    
-    alert(status);
-    console.log('Debug Status:', status);
-}
-        
-        // 전체 경로가 보이도록 지도 조정
-function fitMapToRoute() {
-    if (routePath.length < 2) return;
-    
-    // 경로의 경계 계산
-    var bounds = new naver.maps.LatLngBounds();
-    
-    for (var i = 0; i < routePath.length; i++) {
-        bounds.extend(routePath[i]);
-    }
-    
-    // 지도를 경계에 맞춰 조정 (여백 추가)
-    map.fitBounds(bounds, {
-        top: 100,
-        right: 100,
-        bottom: 100,
-        left: 100
-    });
-    
-    console.log('Map fitted to route bounds');
-}
-        
-        // 거리에 따른 적절한 줌 레벨 계산
-function calculateZoomForDistance(totalDistanceMeters) {
-    if (totalDistanceMeters < 500) return 17;      // 500m 이하
-    else if (totalDistanceMeters < 1000) return 16; // 1km 이하
-    else if (totalDistanceMeters < 2000) return 15; // 2km 이하
-    else if (totalDistanceMeters < 5000) return 14; // 5km 이하
-    else if (totalDistanceMeters < 10000) return 13; // 10km 이하
-    else if (totalDistanceMeters < 20000) return 12; // 20km 이하
-    else if (totalDistanceMeters < 50000) return 11; // 50km 이하
-    else return 10;
-}
-
-// 경로 추적 완료시 호출
-function onTrackingComplete() {
-    var zoomLevel = calculateZoomForDistance(totalDistance);
-    
-    // 전체 경로가 보이도록 조정
-    fitMapToRoute();
-    
-    // 또는 계산된 줌 레벨 사용 (선택사항)
-    // map.setZoom(zoomLevel);
-    
-    console.log(`Tracking complete. Distance: ${totalDistance}m, Zoom: ${zoomLevel}`);
-}
-
-        function sendToUnity(eventType, data) {
-    var message = {
-        type: eventType,
-        data: data,
-        timestamp: Date.now()
-    };
-    
-    // GPMWebView 방식
-    if (window.location.href.indexOf('unity://') === -1) {
-        // scheme 직접 전송
-        window.location.href = 'unity://' + eventType;
-        console.log('Sent via scheme:', 'unity://' + eventType);
-    }
-    
-    console.log('Sent to Unity:', message);
-}
-
-        naver.maps.Event.addListener(map, 'click', function(e) {
-            sendToUnity('map_clicked', {
-                lat: e.coord.lat(),
-                lng: e.coord.lng()
-            });
         });
 
-        naver.maps.Event.addListener(map, 'zoom_changed', function() {
-            sendToUnity('zoom_changed', {
-                zoom: map.getZoom()
-            });
+        document.getElementById('startTrackingBtn').addEventListener('click', function() {
+            startTracking();
+            window.location.href = 'unity://start_tracking';
         });
 
-        window.onload = function() {
-            sendToUnity('map_ready', {});
-            console.log('Naver Map Ready');
-        };
+        document.getElementById('stopTrackingBtn').addEventListener('click', function() {
+            stopTracking();
+            window.location.href = 'unity://stop_tracking';
+        });
+
+        document.getElementById('clearRouteBtn').addEventListener('click', function() {
+            clearRoute();
+            window.location.href = 'unity://clear_route';
+        });
+
+        document.getElementById('saveMapBtn').addEventListener('click', function() {
+            window.location.href = 'unity://save_static_map';
+        });
+
+        // 전역 함수로 등록 (Unity에서 호출용)
+        window.startRoute = startTracking;
+        window.stopRoute = stopTracking;
+        window.clearRoute = clearRoute;
+        window.addRoutePoint = addRoutePoint;
+
+        // 지도 초기화 실행
+        initMap();
     </script>
 </body>
 </html>
