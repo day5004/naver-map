@@ -2,19 +2,33 @@
 <html>
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Naver Map</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no, maximum-scale=1.0">
+    <title>Naver Map with State Preservation</title>
     <script type="text/javascript" src="https://oapi.map.naver.com/openapi/v3/maps.js?ncpKeyId=0lep6flysx"></script>
     <style>
         * {
             margin: 0;
             padding: 0;
             box-sizing: border-box;
+            /* 텍스트 선택 방지 */
+            -webkit-user-select: none;
+            -moz-user-select: none;
+            -ms-user-select: none;
+            user-select: none;
+        }
+        
+        /* 스와이프 방지 */
+        html, body {
+            overflow: hidden;
+            touch-action: none;
+            -webkit-overflow-scrolling: touch;
         }
         
         #map {
             width: 100vw;
             height: 100vh;
+            /* 지도에서만 터치 허용 */
+            touch-action: manipulation;
         }
         
         .control-panel {
@@ -54,12 +68,11 @@
             cursor: not-allowed;
         }
         
-        /* 정보 패널을 오른쪽 하단으로 이동 */
         .info-panel {
             position: absolute;
             bottom: 10px;
-            right: 10px;  /* left를 right로 변경 */
-            background: rgba(255, 255, 255, 0.95);  /* 약간 투명하게 */
+            right: 10px;
+            background: rgba(255, 255, 255, 0.95);
             padding: 8px 12px;
             border-radius: 8px;
             box-shadow: 0 2px 6px rgba(0,0,0,0.3);
@@ -79,7 +92,6 @@
             color: #333;
         }
         
-        /* 모바일 대응 */
         @media (max-width: 600px) {
             .control-panel {
                 top: 5px;
@@ -115,7 +127,6 @@
         <button id="saveMapBtn" class="control-btn">지도 저장</button>
     </div>
     
-    <!-- 오른쪽 하단으로 이동한 정보 패널 -->
     <div class="info-panel">
         <div class="info-row">
             <label>위도:</label>
@@ -144,7 +155,65 @@
     </div>
 
     <script>
-        // 전역 변수
+        // ============= 상태 보존 시스템 =============
+        const StateManager = {
+            // 상태 저장 키
+            STORAGE_KEY: 'naverMapState',
+            
+            // 현재 상태 저장
+            saveState: function() {
+                const state = {
+                    center: map ? {
+                        lat: map.getCenter().lat(),
+                        lng: map.getCenter().lng()
+                    } : null,
+                    zoom: map ? map.getZoom() : 16,
+                    isTracking: isTracking,
+                    routeCoordinates: routeCoordinates.map(coord => ({
+                        lat: coord.lat(),
+                        lng: coord.lng()
+                    })),
+                    totalDistance: totalDistance,
+                    lastUpdate: new Date().toISOString()
+                };
+                
+                try {
+                    localStorage.setItem(this.STORAGE_KEY, JSON.stringify(state));
+                    console.log('State saved:', state);
+                    return true;
+                } catch (e) {
+                    console.error('Failed to save state:', e);
+                    return false;
+                }
+            },
+            
+            // 상태 복원
+            restoreState: function() {
+                try {
+                    const savedState = localStorage.getItem(this.STORAGE_KEY);
+                    if (!savedState) return null;
+                    
+                    const state = JSON.parse(savedState);
+                    console.log('State restored:', state);
+                    return state;
+                } catch (e) {
+                    console.error('Failed to restore state:', e);
+                    return null;
+                }
+            },
+            
+            // 상태 삭제
+            clearState: function() {
+                try {
+                    localStorage.removeItem(this.STORAGE_KEY);
+                    console.log('State cleared');
+                } catch (e) {
+                    console.error('Failed to clear state:', e);
+                }
+            }
+        };
+
+        // ============= 전역 변수 =============
         let map;
         let userMarker = null;
         let routePath = null;
@@ -154,10 +223,25 @@
         let endMarker = null;
         let totalDistance = 0;
 
-        // Unity와 통신하는 브릿지 객체
+        // ============= Unity 브릿지 객체 =============
         window.NaverMapBridge = {
             userLocation: null,
             isTrackingFromUnity: false,
+            map: null,  // ⭐ map 참조 추가
+            
+            // 상태 저장 (Unity에서 호출)
+            saveState: function() {
+                return StateManager.saveState();
+            },
+            
+            // 상태 복원 (Unity에서 호출)
+            restoreState: function() {
+                const state = StateManager.restoreState();
+                if (state) {
+                    applyRestoredState(state);
+                }
+                return state;
+            },
             
             // Unity에서 추적 상태 설정
             setTrackingState: function(state) {
@@ -170,7 +254,7 @@
                 }
             },
             
-            // Unity에서 위치 업데이트 받기 (플러그인 GPS 데이터)
+            // Unity에서 위치 업데이트
             updateLocation: function(lat, lng, accuracy) {
                 console.log('GPS from Plugin:', lat, lng, accuracy);
                 
@@ -199,17 +283,14 @@
                 // 경로 추적 중이면 경로에 추가
                 if (isTracking) {
                     if (routeCoordinates.length === 0) {
-                        // 첫 포인트는 바로 추가
                         addRoutePoint(lat, lng);
                     } else {
-                        // 마지막 포인트와의 거리 체크
                         const lastPoint = routeCoordinates[routeCoordinates.length - 1];
                         const distance = calculateDistance(
                             lastPoint.lat(), lastPoint.lng(),
                             lat, lng
                         );
                         
-                        // 3미터 이상 이동시 경로 추가
                         if (distance > 3) {
                             addRoutePoint(lat, lng);
                             totalDistance += distance;
@@ -218,14 +299,17 @@
                     }
                 }
                 
-                // 정보 패널 업데이트
                 updateInfoPanel(lat, lng, accuracy);
+                
+                // 상태 자동 저장
+                StateManager.saveState();
             },
             
             // 지도 이동
             moveToLocation: function(lat, lng) {
                 if (map) {
                     map.setCenter(new naver.maps.LatLng(lat, lng));
+                    StateManager.saveState();
                 }
             },
             
@@ -233,34 +317,60 @@
             setZoom: function(level) {
                 if (map) {
                     map.setZoom(level);
+                    StateManager.saveState();
                 }
             },
             
-            // 경로 추적 시작 (Unity에서 호출)
+            // 경로 추적 시작
             startTracking: function() {
                 if (!isTracking) {
                     startTracking();
                 }
             },
             
-            // 경로 추적 중지 (Unity에서 호출)
+            // 경로 추적 중지
             stopTracking: function() {
                 if (isTracking) {
                     stopTracking();
                 }
             },
             
-            // 경로에 점 추가 (Unity에서 호출)
+            // 경로에 점 추가
             addRoutePoint: function(lat, lng) {
                 addRoutePoint(lat, lng);
+            },
+            
+            // 경로 그리기 (Unity에서 호출)
+            drawRoute: function(pointsArray) {
+                if (!Array.isArray(pointsArray)) {
+                    try {
+                        pointsArray = JSON.parse(pointsArray);
+                    } catch (e) {
+                        console.error('Invalid route data:', e);
+                        return;
+                    }
+                }
+                
+                routeCoordinates = [];
+                pointsArray.forEach(p => {
+                    routeCoordinates.push(new naver.maps.LatLng(p.lat, p.lng));
+                });
+                
+                updateRoute();
+                document.getElementById('pointCount').textContent = routeCoordinates.length;
             }
         };
 
-        // 지도 초기화
+        // ============= 지도 초기화 =============
         function initMap() {
+            // 저장된 상태 확인
+            const savedState = StateManager.restoreState();
+            
             const mapOptions = {
-                center: new naver.maps.LatLng(37.5665, 126.9780),
-                zoom: 16,
+                center: savedState && savedState.center ? 
+                    new naver.maps.LatLng(savedState.center.lat, savedState.center.lng) : 
+                    new naver.maps.LatLng(37.5665, 126.9780),
+                zoom: savedState ? savedState.zoom : 16,
                 mapTypeControl: false,
                 scaleControl: false,
                 logoControl: false,
@@ -272,26 +382,81 @@
             };
 
             map = new naver.maps.Map('map', mapOptions);
+            window.NaverMapBridge.map = map;  // ⭐ 브릿지에 map 참조 저장
             
-            // 지도 준비 완료 알림
-            document.getElementById('status').textContent = '대기중';
+            // 지도 이동/줌 이벤트 리스너
+            naver.maps.Event.addListener(map, 'dragend', function() {
+                StateManager.saveState();
+            });
+            
+            naver.maps.Event.addListener(map, 'zoom_changed', function() {
+                StateManager.saveState();
+            });
+            
+            // 저장된 상태가 있으면 복원
+            if (savedState) {
+                applyRestoredState(savedState);
+            }
+            
+            document.getElementById('status').textContent = '준비완료';
             document.getElementById('status').style.color = '#666';
         }
 
-        // 경로 추적 시작
+        // ============= 저장된 상태 적용 =============
+        function applyRestoredState(state) {
+            if (!state) return;
+            
+            // 경로 복원
+            if (state.routeCoordinates && state.routeCoordinates.length > 0) {
+                routeCoordinates = state.routeCoordinates.map(p => 
+                    new naver.maps.LatLng(p.lat, p.lng)
+                );
+                totalDistance = state.totalDistance || 0;
+                
+                updateRoute();
+                
+                // 시작 마커
+                if (routeCoordinates.length > 0) {
+                    if (startMarker) startMarker.setMap(null);
+                    startMarker = new naver.maps.Marker({
+                        position: routeCoordinates[0],
+                        map: map,
+                        icon: {
+                            content: '<div style="width:15px;height:15px;background:#00C73C;border-radius:50%;border:2px solid white;box-shadow:0 2px 4px rgba(0,0,0,0.3);"></div>',
+                            anchor: new naver.maps.Point(9, 9)
+                        },
+                        zIndex: 90
+                    });
+                }
+                
+                // UI 업데이트
+                document.getElementById('pointCount').textContent = routeCoordinates.length;
+                document.getElementById('distance').textContent = Math.round(totalDistance);
+            }
+            
+            // 추적 상태 복원
+            if (state.isTracking) {
+                isTracking = true;
+                document.getElementById('startTrackingBtn').style.display = 'none';
+                document.getElementById('stopTrackingBtn').style.display = 'block';
+                document.getElementById('status').textContent = '추적 중';
+                document.getElementById('status').style.color = '#03CF5D';
+            }
+            
+            console.log('State restored from:', state.lastUpdate);
+        }
+
+        // ============= 경로 추적 함수들 =============
         function startTracking() {
             if (!isTracking) {
                 isTracking = true;
                 
-                // 이전 경로가 없으면 새로 시작
                 if (routeCoordinates.length === 0) {
                     totalDistance = 0;
                     
-                    // 현재 위치를 시작점으로
                     if (window.NaverMapBridge.userLocation) {
                         routeCoordinates.push(window.NaverMapBridge.userLocation);
                         
-                        // 시작 마커 생성
                         if (startMarker) {
                             startMarker.setMap(null);
                         }
@@ -307,22 +472,20 @@
                     }
                 }
                 
-                // UI 업데이트
                 document.getElementById('startTrackingBtn').style.display = 'none';
                 document.getElementById('stopTrackingBtn').style.display = 'block';
                 document.getElementById('status').textContent = '추적 중';
                 document.getElementById('status').style.color = '#03CF5D';
                 
+                StateManager.saveState();
                 console.log('Route tracking started');
             }
         }
 
-        // 경로 추적 중지
         function stopTracking() {
             if (isTracking) {
                 isTracking = false;
                 
-                // 종료 마커 생성
                 if (routeCoordinates.length > 0) {
                     if (endMarker) {
                         endMarker.setMap(null);
@@ -339,31 +502,32 @@
                     });
                 }
                 
-                // UI 업데이트
                 document.getElementById('startTrackingBtn').style.display = 'block';
                 document.getElementById('stopTrackingBtn').style.display = 'none';
                 document.getElementById('status').textContent = '중지됨';
                 document.getElementById('status').style.color = '#FF3E3E';
                 
+                StateManager.saveState();
                 console.log('Route tracking stopped');
             }
         }
 
-        // 경로에 포인트 추가
         function addRoutePoint(lat, lng) {
             const point = new naver.maps.LatLng(lat, lng);
             routeCoordinates.push(point);
             
-            // 경로 업데이트
             updateRoute();
             
-            // 포인트 수 업데이트
             document.getElementById('pointCount').textContent = routeCoordinates.length;
+            
+            // 상태 저장 (너무 자주 저장하지 않도록)
+            if (routeCoordinates.length % 5 === 0) {
+                StateManager.saveState();
+            }
             
             console.log('Point added:', lat, lng, 'Total:', routeCoordinates.length);
         }
 
-        // 경로 그리기 업데이트
         function updateRoute() {
             if (routePath) {
                 routePath.setMap(null);
@@ -382,7 +546,6 @@
             }
         }
 
-        // 경로 초기화
         function clearRoute() {
             routeCoordinates = [];
             isTracking = false;
@@ -403,7 +566,6 @@
                 endMarker = null;
             }
             
-            // UI 업데이트
             document.getElementById('status').textContent = '초기화됨';
             document.getElementById('status').style.color = '#999';
             document.getElementById('pointCount').textContent = '0';
@@ -411,13 +573,131 @@
             document.getElementById('startTrackingBtn').style.display = 'block';
             document.getElementById('stopTrackingBtn').style.display = 'none';
             
+            StateManager.clearState();
             console.log('Route cleared');
         }
 
-        // 저장된 경로 복원 (Unity에서 호출)
+        // ============= 유틸리티 함수들 =============
+        function calculateDistance(lat1, lng1, lat2, lng2) {
+            const R = 6371000;
+            const dLat = (lat2 - lat1) * Math.PI / 180;
+            const dLng = (lng2 - lng1) * Math.PI / 180;
+            const a = Math.sin(dLat/2) * Math.sin(dLat/2) +
+                     Math.cos(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) *
+                     Math.sin(dLng/2) * Math.sin(dLng/2);
+            const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
+            return R * c;
+        }
+
+        function updateInfoPanel(lat, lng, accuracy) {
+            document.getElementById('lat').textContent = lat.toFixed(6);
+            document.getElementById('lng').textContent = lng.toFixed(6);
+            document.getElementById('accuracy').textContent = accuracy ? accuracy.toFixed(1) + 'm' : 'N/A';
+        }
+
+        // ============= 버튼 이벤트 리스너 =============
+        document.getElementById('myLocationBtn').addEventListener('click', function() {
+            if (window.NaverMapBridge.userLocation) {
+                map.setCenter(window.NaverMapBridge.userLocation);
+                map.setZoom(17);
+                StateManager.saveState();
+            } else {
+                alert('GPS 위치를 받아오는 중입니다...');
+            }
+        });
+
+        document.getElementById('startTrackingBtn').addEventListener('click', function() {
+            startTracking();
+            window.location.href = 'unity://start_tracking';
+        });
+
+        document.getElementById('stopTrackingBtn').addEventListener('click', function() {
+            stopTracking();
+            window.location.href = 'unity://stop_tracking';
+        });
+
+        document.getElementById('clearRouteBtn').addEventListener('click', function() {
+            if (routeCoordinates.length > 0) {
+                if (confirm('경로를 초기화하시겠습니까?\n저장된 모든 경로가 삭제됩니다.')) {
+                    clearRoute();
+                    window.location.href = 'unity://clear_route';
+                }
+            } else {
+                alert('초기화할 경로가 없습니다.');
+            }
+        });
+
+        document.getElementById('saveMapBtn').addEventListener('click', function() {
+            if (routeCoordinates.length > 0) {
+                window.location.href = 'unity://save_static_map';
+            } else {
+                alert('저장할 경로가 없습니다.');
+            }
+        });
+
+        // ============= 스와이프 방지 =============
+        let touchStartX = 0;
+        let touchStartY = 0;
+        
+        document.addEventListener('touchstart', function(e) {
+            touchStartX = e.touches[0].clientX;
+            touchStartY = e.touches[0].clientY;
+        }, { passive: false });
+        
+        document.addEventListener('touchmove', function(e) {
+            if (!e.target.closest('#map')) {
+                e.preventDefault();
+                return false;
+            }
+            
+            const deltaX = Math.abs(e.touches[0].clientX - touchStartX);
+            const deltaY = Math.abs(e.touches[0].clientY - touchStartY);
+            
+            // 가로 스와이프가 크면 방지
+            if (deltaX > deltaY && deltaX > 50) {
+                e.preventDefault();
+                e.stopPropagation();
+                return false;
+            }
+        }, { passive: false });
+        
+        // 뒤로가기 제스처 방지
+        window.history.pushState(null, null, window.location.href);
+        window.onpopstate = function() {
+            window.history.go(1);
+        };
+
+        // ============= 페이지 이벤트 =============
+        // 페이지 숨김/표시 이벤트
+        document.addEventListener('visibilitychange', function() {
+            if (document.hidden) {
+                // 페이지가 숨겨질 때 상태 저장
+                StateManager.saveState();
+                console.log('Page hidden - state saved');
+            } else {
+                // 페이지가 다시 보일 때 상태 복원
+                const state = StateManager.restoreState();
+                if (state) {
+                    console.log('Page visible - state restored');
+                }
+            }
+        });
+
+        // 페이지 언로드 시 상태 저장
+        window.addEventListener('beforeunload', function() {
+            StateManager.saveState();
+        });
+
+        // ============= 전역 함수 등록 (Unity용) =============
+        window.startRoute = startTracking;
+        window.stopRoute = stopTracking;
+        window.clearRoute = clearRoute;
+        window.addRoutePoint = addRoutePoint;
+        
+        // 경로 복원 함수
         window.restoreRoute = function(pointsJson) {
             try {
-                const points = JSON.parse(pointsJson);
+                const points = typeof pointsJson === 'string' ? JSON.parse(pointsJson) : pointsJson;
                 routeCoordinates = [];
                 totalDistance = 0;
                 
@@ -425,7 +705,6 @@
                     const point = new naver.maps.LatLng(p.lat, p.lng);
                     routeCoordinates.push(point);
                     
-                    // 거리 계산
                     if (index > 0) {
                         const prevPoint = routeCoordinates[index - 1];
                         totalDistance += calculateDistance(
@@ -435,12 +714,9 @@
                     }
                 });
                 
-                // 경로 그리기
                 updateRoute();
                 
-                // 시작/끝 마커 생성
                 if (routeCoordinates.length > 0) {
-                    // 시작 마커
                     if (startMarker) startMarker.setMap(null);
                     startMarker = new naver.maps.Marker({
                         position: routeCoordinates[0],
@@ -451,7 +727,6 @@
                         }
                     });
                     
-                    // 끝 마커 (추적 중지 상태일 때만)
                     if (!isTracking && routeCoordinates.length > 1) {
                         if (endMarker) endMarker.setMap(null);
                         endMarker = new naver.maps.Marker({
@@ -465,88 +740,20 @@
                     }
                 }
                 
-                // UI 업데이트
                 document.getElementById('pointCount').textContent = routeCoordinates.length;
                 document.getElementById('distance').textContent = Math.round(totalDistance);
                 
+                StateManager.saveState();
                 console.log('Restored', routeCoordinates.length, 'points');
             } catch (e) {
                 console.error('Failed to restore route:', e);
             }
         };
 
-        // 거리 계산 (미터)
-        function calculateDistance(lat1, lng1, lat2, lng2) {
-            const R = 6371000; // 지구 반지름 (미터)
-            const dLat = (lat2 - lat1) * Math.PI / 180;
-            const dLng = (lng2 - lng1) * Math.PI / 180;
-            const a = Math.sin(dLat/2) * Math.sin(dLat/2) +
-                     Math.cos(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) *
-                     Math.sin(dLng/2) * Math.sin(dLng/2);
-            const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
-            return R * c;
-        }
-
-        // 정보 패널 업데이트
-        function updateInfoPanel(lat, lng, accuracy) {
-            document.getElementById('lat').textContent = lat.toFixed(6);
-            document.getElementById('lng').textContent = lng.toFixed(6);
-            document.getElementById('accuracy').textContent = accuracy ? accuracy.toFixed(1) + 'm' : 'N/A';
-        }
-
-        // 버튼 이벤트 리스너
-        document.getElementById('myLocationBtn').addEventListener('click', function() {
-            if (window.NaverMapBridge.userLocation) {
-                map.setCenter(window.NaverMapBridge.userLocation);
-                map.setZoom(17);
-            } else {
-                alert('GPS 위치를 받아오는 중입니다...');
-            }
-        });
-
-        document.getElementById('startTrackingBtn').addEventListener('click', function() {
-            startTracking();
-            // Unity에 알림
-            window.location.href = 'unity://start_tracking';
-        });
-
-        document.getElementById('stopTrackingBtn').addEventListener('click', function() {
-            stopTracking();
-            // Unity에 알림
-            window.location.href = 'unity://stop_tracking';
-        });
-
-        document.getElementById('clearRouteBtn').addEventListener('click', function() {
-            if (routeCoordinates.length > 0) {
-                if (confirm('경로를 초기화하시겠습니까?\n저장된 모든 경로가 삭제됩니다.')) {
-                    clearRoute();
-                    // Unity에 알림
-                    window.location.href = 'unity://clear_route';
-                }
-            } else {
-                alert('초기화할 경로가 없습니다.');
-            }
-        });
-
-        document.getElementById('saveMapBtn').addEventListener('click', function() {
-            if (routeCoordinates.length > 0) {
-                // Unity에 알림
-                window.location.href = 'unity://save_static_map';
-            } else {
-                alert('저장할 경로가 없습니다.');
-            }
-        });
-
-        // 전역 함수로 등록 (Unity에서 호출용)
-        window.startRoute = startTracking;
-        window.stopRoute = stopTracking;
-        window.clearRoute = clearRoute;
-        window.addRoutePoint = addRoutePoint;
-
-        // 지도 초기화 실행
+        // ============= 초기화 실행 =============
         window.onload = function() {
             initMap();
-            console.log('Map initialized');
+            console.log('Map initialized with state preservation');
         };
     </script>
 </body>
