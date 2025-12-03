@@ -202,7 +202,6 @@
         const urlParams = new URLSearchParams(window.location.search);
         const isFloatingMode = urlParams.get('floating') === 'true';
         
-        // 플로팅 모드 로그
         if (isFloatingMode) {
             console.log('🔄 FLOATING MODE ACTIVATED');
         }
@@ -212,6 +211,8 @@
             STORAGE_KEY: 'naverMapState',
             
             saveState: function() {
+                if (typeof map === 'undefined' || !map) return false;
+                
                 const state = {
                     center: map ? {
                         lat: map.getCenter().lat(),
@@ -225,7 +226,7 @@
                     })),
                     totalDistance: totalDistance,
                     lastUpdate: new Date().toISOString(),
-                    isFloating: isFloatingMode  // 플로팅 모드 저장
+                    isFloating: isFloatingMode
                 };
                 
                 try {
@@ -271,7 +272,7 @@
         let startMarker = null;
         let endMarker = null;
         let totalDistance = 0;
-        let autoStartTriggered = false;  // 플로팅 모드 자동 시작 플래그
+        let autoStartTriggered = false;
 
         // ============= Unity 브릿지 객체 =============
         window.NaverMapBridge = {
@@ -304,6 +305,12 @@
             updateLocation: function(lat, lng, accuracy) {
                 console.log('GPS from Plugin:', lat, lng, accuracy);
                 
+                // ⭐ naver 객체 체크
+                if (typeof naver === 'undefined' || !naver.maps) {
+                    console.error('Naver Maps not loaded yet');
+                    return;
+                }
+                
                 this.userLocation = new naver.maps.LatLng(lat, lng);
                 
                 // 플로팅 모드에서 첫 GPS 수신시 자동 추적 시작
@@ -312,7 +319,6 @@
                     autoStartTriggered = true;
                     startTracking();
                     
-                    // 지도 중심을 현재 위치로
                     if (map) {
                         map.setCenter(this.userLocation);
                         map.setZoom(17);
@@ -350,27 +356,29 @@
                             lat, lng
                         );
                         
-                        // 플로팅 모드에서는 더 짧은 거리도 기록
+                        // ⭐ 최소 거리 조건 (3m 이상, 100m 이하)
                         const minDistance = isFloatingMode ? 2 : 3;
+                        const maxDistance = 100;  // 100m 이상 점프는 무시
                         
-                        if (distance > minDistance) {
+                        if (distance > minDistance && distance < maxDistance) {
                             addRoutePoint(lat, lng);
                             totalDistance += distance;
                             document.getElementById('distance').textContent = Math.round(totalDistance);
+                        } else if (distance >= maxDistance) {
+                            console.log('⚠️ GPS jump detected (' + Math.round(distance) + 'm), ignoring');
                         }
                     }
                 }
                 
                 updateInfoPanel(lat, lng, accuracy);
                 
-                // 플로팅 모드에서는 더 자주 저장
                 if (isFloatingMode || routeCoordinates.length % 5 === 0) {
                     StateManager.saveState();
                 }
             },
             
             moveToLocation: function(lat, lng) {
-                if (map) {
+                if (map && typeof naver !== 'undefined') {
                     map.setCenter(new naver.maps.LatLng(lat, lng));
                     StateManager.saveState();
                 }
@@ -400,6 +408,11 @@
             },
             
             drawRoute: function(pointsArray) {
+                if (typeof naver === 'undefined' || !naver.maps) {
+                    console.error('Naver Maps not loaded yet');
+                    return;
+                }
+                
                 if (!Array.isArray(pointsArray)) {
                     try {
                         pointsArray = JSON.parse(pointsArray);
@@ -421,7 +434,13 @@
 
         // ============= 지도 초기화 =============
         function initMap() {
-            // 플로팅 모드 설정
+            // ⭐ naver 객체 체크
+            if (typeof naver === 'undefined' || !naver.maps) {
+                console.error('Naver Maps API not loaded');
+                setTimeout(initMap, 500);  // 0.5초 후 재시도
+                return;
+            }
+            
             if (isFloatingMode) {
                 document.body.classList.add('floating-mode');
                 console.log('Floating mode UI applied');
@@ -429,10 +448,9 @@
             
             const savedState = StateManager.restoreState();
             
-            // 플로팅 모드 맵 옵션
             const floatingMapOptions = isFloatingMode ? {
-                draggable: false,      // 드래그 비활성화
-                scrollWheel: false,    // 줌 비활성화
+                draggable: false,
+                scrollWheel: false,
                 disableDoubleClickZoom: true,
                 disableDoubleTapZoom: true
             } : {};
@@ -446,17 +464,16 @@
                 scaleControl: false,
                 logoControl: false,
                 mapDataControl: false,
-                zoomControl: !isFloatingMode,  // 플로팅 모드에서는 줌 컨트롤 숨김
+                zoomControl: !isFloatingMode,
                 zoomControlOptions: {
                     position: naver.maps.Position.TOP_RIGHT
                 },
-                ...floatingMapOptions  // 플로팅 모드 옵션 병합
+                ...floatingMapOptions
             };
 
             map = new naver.maps.Map('map', mapOptions);
             window.NaverMapBridge.map = map;
             
-            // 일반 모드에서만 이벤트 리스너 등록
             if (!isFloatingMode) {
                 naver.maps.Event.addListener(map, 'dragend', function() {
                     StateManager.saveState();
@@ -467,12 +484,10 @@
                 });
             }
             
-            // 저장된 상태가 있으면 복원
             if (savedState) {
                 applyRestoredState(savedState);
             }
             
-            // 플로팅 모드 초기 상태
             if (isFloatingMode) {
                 document.getElementById('status').textContent = '플로팅';
                 document.getElementById('status').style.color = '#00FF00';
@@ -480,13 +495,15 @@
                 document.getElementById('status').textContent = '준비완료';
                 document.getElementById('status').style.color = '#666';
             }
+            
+            console.log('✅ Map initialized successfully');
         }
 
         // ============= 저장된 상태 적용 =============
         function applyRestoredState(state) {
             if (!state) return;
+            if (typeof naver === 'undefined' || !naver.maps) return;
             
-            // 경로 복원
             if (state.routeCoordinates && state.routeCoordinates.length > 0) {
                 routeCoordinates = state.routeCoordinates.map(p => 
                     new naver.maps.LatLng(p.lat, p.lng)
@@ -495,7 +512,6 @@
                 
                 updateRoute();
                 
-                // 시작 마커
                 if (routeCoordinates.length > 0) {
                     if (startMarker) startMarker.setMap(null);
                     startMarker = new naver.maps.Marker({
@@ -509,12 +525,10 @@
                     });
                 }
                 
-                // UI 업데이트
                 document.getElementById('pointCount').textContent = routeCoordinates.length;
                 document.getElementById('distance').textContent = Math.round(totalDistance);
             }
             
-            // 추적 상태 복원
             if (state.isTracking) {
                 isTracking = true;
                 document.getElementById('startTrackingBtn').style.display = 'none';
@@ -528,6 +542,8 @@
 
         // ============= 경로 추적 함수들 =============
         function startTracking() {
+            if (typeof naver === 'undefined' || !naver.maps) return;
+            
             if (!isTracking) {
                 isTracking = true;
                 
@@ -563,6 +579,8 @@
         }
 
         function stopTracking() {
+            if (typeof naver === 'undefined' || !naver.maps) return;
+            
             if (isTracking) {
                 isTracking = false;
                 
@@ -593,6 +611,8 @@
         }
 
         function addRoutePoint(lat, lng) {
+            if (typeof naver === 'undefined' || !naver.maps) return;
+            
             const point = new naver.maps.LatLng(lat, lng);
             routeCoordinates.push(point);
             
@@ -600,7 +620,6 @@
             
             document.getElementById('pointCount').textContent = routeCoordinates.length;
             
-            // 플로팅 모드에서는 매번 저장
             if (isFloatingMode || routeCoordinates.length % 5 === 0) {
                 StateManager.saveState();
             }
@@ -608,22 +627,76 @@
             console.log('Point added:', lat, lng, 'Total:', routeCoordinates.length);
         }
 
+        // ============= ⭐⭐⭐ 경로 그리기 (스무딩 적용!) ⭐⭐⭐ =============
         function updateRoute() {
+            // ⭐ naver 객체 체크 추가
+            if (typeof naver === 'undefined' || !naver.maps) {
+                console.error('Naver Maps not loaded yet');
+                return;
+            }
+            
             if (routePath) {
                 routePath.setMap(null);
             }
             
             if (routeCoordinates.length > 1) {
+                // ⭐ 스무딩 적용 (안전한 버전)
+                var pathToRender = smoothPointsSafe(routeCoordinates);
+                
                 routePath = new naver.maps.Polyline({
                     map: map,
-                    path: routeCoordinates,
+                    path: pathToRender,
                     strokeColor: '#4285F4',
                     strokeOpacity: 0.8,
-                    strokeWeight: isFloatingMode ? 3 : 4,  // 플로팅 모드에서는 얇게
-                    strokeLineCap: 'round',
-                    strokeLineJoin: 'round'
+                    strokeWeight: isFloatingMode ? 3 : 5,
+                    strokeLineCap: 'round',      // ⭐ 끝을 둥글게
+                    strokeLineJoin: 'round'      // ⭐ 연결 부분 둥글게
                 });
+                
+                console.log('Route updated: ' + routeCoordinates.length + ' points → ' + pathToRender.length + ' smoothed');
             }
+        }
+        
+        // ⭐⭐⭐ 부드러운 라인을 위한 스무딩 함수 (안전한 버전) ⭐⭐⭐
+        function smoothPointsSafe(points) {
+            // naver 객체 체크
+            if (typeof naver === 'undefined' || !naver.maps) {
+                return points;
+            }
+            
+            // 포인트가 3개 미만이면 스무딩 불가
+            if (points.length < 3) return points;
+            
+            var smoothed = [];
+            
+            // 첫 번째 포인트는 그대로
+            smoothed.push(points[0]);
+            
+            // 중간 포인트들에 3점 이동 평균 적용
+            for (var i = 1; i < points.length - 1; i++) {
+                var prev = points[i - 1];
+                var curr = points[i];
+                var next = points[i + 1];
+                
+                // 3점 평균 계산
+                var avgLat = (prev.lat() + curr.lat() + next.lat()) / 3;
+                var avgLng = (prev.lng() + curr.lng() + next.lng()) / 3;
+                
+                // 이전 스무딩 포인트와 현재 평균 사이에 중간점 추가 (더 부드럽게)
+                var lastSmoothed = smoothed[smoothed.length - 1];
+                var midLat = (lastSmoothed.lat() + avgLat) / 2;
+                var midLng = (lastSmoothed.lng() + avgLng) / 2;
+                
+                // 중간점 추가
+                smoothed.push(new naver.maps.LatLng(midLat, midLng));
+                // 평균점 추가
+                smoothed.push(new naver.maps.LatLng(avgLat, avgLng));
+            }
+            
+            // 마지막 포인트는 그대로
+            smoothed.push(points[points.length - 1]);
+            
+            return smoothed;
         }
 
         function clearRoute() {
@@ -671,12 +744,10 @@
 
         function updateInfoPanel(lat, lng, accuracy) {
             if (isFloatingMode) {
-                // 플로팅 모드: 간소화된 정보
                 document.getElementById('lat').textContent = lat.toFixed(4);
                 document.getElementById('lng').textContent = lng.toFixed(4);
                 document.getElementById('pointCount').textContent = routeCoordinates.length;
             } else {
-                // 일반 모드: 전체 정보
                 document.getElementById('lat').textContent = lat.toFixed(6);
                 document.getElementById('lng').textContent = lng.toFixed(6);
                 document.getElementById('accuracy').textContent = accuracy ? accuracy.toFixed(1) + 'm' : 'N/A';
@@ -743,13 +814,11 @@
             const deltaX = Math.abs(e.touches[0].clientX - touchStartX);
             const deltaY = Math.abs(e.touches[0].clientY - touchStartY);
             
-            // 플로팅 모드에서는 모든 터치 이벤트 방지
             if (isFloatingMode) {
                 e.preventDefault();
                 return false;
             }
             
-            // 일반 모드: 가로 스와이프만 방지
             if (deltaX > deltaY && deltaX > 50) {
                 e.preventDefault();
                 e.stopPropagation();
@@ -757,7 +826,6 @@
             }
         }, { passive: false });
         
-        // 뒤로가기 제스처 방지
         window.history.pushState(null, null, window.location.href);
         window.onpopstate = function() {
             window.history.go(1);
@@ -787,6 +855,11 @@
         window.addRoutePoint = addRoutePoint;
         
         window.restoreRoute = function(pointsJson) {
+            if (typeof naver === 'undefined' || !naver.maps) {
+                console.error('Naver Maps not loaded yet');
+                return;
+            }
+            
             try {
                 const points = typeof pointsJson === 'string' ? JSON.parse(pointsJson) : pointsJson;
                 routeCoordinates = [];
@@ -843,8 +916,14 @@
 
         // ============= 초기화 실행 =============
         window.onload = function() {
-            initMap();
-            console.log('Map initialized' + (isFloatingMode ? ' [FLOATING MODE]' : ' [NORMAL MODE]'));
+            // ⭐ 네이버 맵 API 로드 확인 후 초기화
+            if (typeof naver !== 'undefined' && naver.maps) {
+                initMap();
+            } else {
+                console.log('Waiting for Naver Maps API...');
+                setTimeout(initMap, 500);
+            }
+            console.log('Map initialization started' + (isFloatingMode ? ' [FLOATING MODE]' : ' [NORMAL MODE]'));
         };
     </script>
 </body>
