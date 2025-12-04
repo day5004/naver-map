@@ -28,44 +28,7 @@
             touch-action: manipulation;
         }
         
-        /* === 일반 모드 스타일 === */
-        .control-panel {
-            position: absolute;
-            top: 10px;
-            left: 10px;
-            background: white;
-            padding: 10px;
-            border-radius: 8px;
-            box-shadow: 0 2px 6px rgba(0,0,0,0.3);
-            z-index: 1000;
-        }
-        
-        .control-btn {
-            display: block;
-            width: 120px;
-            padding: 8px;
-            margin: 5px 0;
-            background: #03CF5D;
-            color: white;
-            border: none;
-            border-radius: 4px;
-            cursor: pointer;
-            font-size: 14px;
-        }
-        
-        .control-btn:hover {
-            background: #00b350;
-        }
-        
-        .control-btn.active {
-            background: #FF3E3E;
-        }
-        
-        .control-btn:disabled {
-            background: #cccccc;
-            cursor: not-allowed;
-        }
-        
+        /* === 정보 패널 (우하단) === */
         .info-panel {
             position: absolute;
             bottom: 10px;
@@ -90,11 +53,15 @@
             color: #333;
         }
         
-        /* === 플로팅 모드 전용 스타일 === */
-        .floating-mode .control-panel {
-            display: none !important;
+        .status-tracking {
+            color: #03CF5D !important;
         }
         
+        .status-stopped {
+            color: #FF3E3E !important;
+        }
+        
+        /* === 플로팅 모드 전용 스타일 === */
         .floating-mode .info-panel {
             position: fixed;
             top: 5px;
@@ -125,7 +92,6 @@
         
         /* 플로팅 모드에서 일부 정보 숨김 */
         .floating-mode .info-row.accuracy,
-        .floating-mode .info-row.status,
         .floating-mode .info-row.distance {
             display: none;
         }
@@ -136,19 +102,6 @@
         }
         
         @media (max-width: 600px) {
-            .control-panel {
-                top: 5px;
-                left: 5px;
-                padding: 6px;
-            }
-            
-            .control-btn {
-                width: 100px;
-                padding: 6px;
-                font-size: 12px;
-                margin: 3px 0;
-            }
-            
             .info-panel {
                 bottom: 5px;
                 right: 5px;
@@ -162,14 +115,7 @@
 <body>
     <div id="map"></div>
     
-    <div class="control-panel">
-        <button id="myLocationBtn" class="control-btn">내 위치</button>
-        <button id="startTrackingBtn" class="control-btn">추적 시작</button>
-        <button id="stopTrackingBtn" class="control-btn active" style="display:none;">추적 중지</button>
-        <button id="clearRouteBtn" class="control-btn">경로 초기화</button>
-        <button id="saveMapBtn" class="control-btn">지도 저장</button>
-    </div>
-    
+    <!-- 정보 패널만 표시 (버튼 없음) -->
     <div class="info-panel">
         <div class="info-row">
             <label>위도:</label>
@@ -185,7 +131,7 @@
         </div>
         <div class="info-row status">
             <label>상태:</label>
-            <span id="status" style="color: #03CF5D;">대기중</span>
+            <span id="status">대기중</span>
         </div>
         <div class="info-row">
             <label>포인트:</label>
@@ -231,7 +177,6 @@
                 
                 try {
                     localStorage.setItem(this.STORAGE_KEY, JSON.stringify(state));
-                    console.log('State saved:', state);
                     return true;
                 } catch (e) {
                     console.error('Failed to save state:', e);
@@ -292,12 +237,13 @@
                 return state;
             },
             
+            // ⭐ Unity에서 추적 상태 설정
             setTrackingState: function(state) {
                 console.log('Unity tracking state:', state);
                 this.isTrackingFromUnity = state;
-                if (state && !isTracking) {
+                if (state) {
                     startTracking();
-                } else if (!state && isTracking) {
+                } else {
                     stopTracking();
                 }
             },
@@ -305,7 +251,6 @@
             updateLocation: function(lat, lng, accuracy) {
                 console.log('GPS from Plugin:', lat, lng, accuracy);
                 
-                // ⭐ naver 객체 체크
                 if (typeof naver === 'undefined' || !naver.maps) {
                     console.error('Naver Maps not loaded yet');
                     return;
@@ -356,9 +301,8 @@
                             lat, lng
                         );
                         
-                        // ⭐ 최소 거리 조건 (3m 이상, 100m 이하)
                         const minDistance = isFloatingMode ? 2 : 3;
-                        const maxDistance = 100;  // 100m 이상 점프는 무시
+                        const maxDistance = 100;
                         
                         if (distance > minDistance && distance < maxDistance) {
                             addRoutePoint(lat, lng);
@@ -391,16 +335,17 @@
                 }
             },
             
+            // ⭐ Unity에서 호출하는 함수들
             startTracking: function() {
-                if (!isTracking) {
-                    startTracking();
-                }
+                startTracking();
             },
             
             stopTracking: function() {
-                if (isTracking) {
-                    stopTracking();
-                }
+                stopTracking();
+            },
+            
+            clearRoute: function() {
+                clearRoute();
             },
             
             addRoutePoint: function(lat, lng) {
@@ -434,10 +379,9 @@
 
         // ============= 지도 초기화 =============
         function initMap() {
-            // ⭐ naver 객체 체크
             if (typeof naver === 'undefined' || !naver.maps) {
                 console.error('Naver Maps API not loaded');
-                setTimeout(initMap, 500);  // 0.5초 후 재시도
+                setTimeout(initMap, 500);
                 return;
             }
             
@@ -488,15 +432,20 @@
                 applyRestoredState(savedState);
             }
             
-            if (isFloatingMode) {
-                document.getElementById('status').textContent = '플로팅';
-                document.getElementById('status').style.color = '#00FF00';
-            } else {
-                document.getElementById('status').textContent = '준비완료';
-                document.getElementById('status').style.color = '#666';
-            }
-            
+            updateStatusDisplay();
             console.log('✅ Map initialized successfully');
+        }
+
+        // ============= 상태 표시 업데이트 =============
+        function updateStatusDisplay() {
+            const statusEl = document.getElementById('status');
+            if (isFloatingMode) {
+                statusEl.textContent = isTracking ? '플로팅 추적' : '플로팅';
+                statusEl.className = isTracking ? 'status-tracking' : '';
+            } else {
+                statusEl.textContent = isTracking ? '추적 중' : '대기중';
+                statusEl.className = isTracking ? 'status-tracking' : '';
+            }
         }
 
         // ============= 저장된 상태 적용 =============
@@ -531,16 +480,13 @@
             
             if (state.isTracking) {
                 isTracking = true;
-                document.getElementById('startTrackingBtn').style.display = 'none';
-                document.getElementById('stopTrackingBtn').style.display = 'block';
-                document.getElementById('status').textContent = isFloatingMode ? '플로팅 추적' : '추적 중';
-                document.getElementById('status').style.color = '#03CF5D';
+                updateStatusDisplay();
             }
             
             console.log('State restored from:', state.lastUpdate);
         }
 
-        // ============= 경로 추적 함수들 =============
+        // ============= 경로 추적 함수들 (Unity에서 호출) =============
         function startTracking() {
             if (typeof naver === 'undefined' || !naver.maps) return;
             
@@ -568,11 +514,7 @@
                     }
                 }
                 
-                document.getElementById('startTrackingBtn').style.display = 'none';
-                document.getElementById('stopTrackingBtn').style.display = 'block';
-                document.getElementById('status').textContent = isFloatingMode ? '플로팅 추적' : '추적 중';
-                document.getElementById('status').style.color = '#03CF5D';
-                
+                updateStatusDisplay();
                 StateManager.saveState();
                 console.log('Route tracking started' + (isFloatingMode ? ' [FLOATING]' : ''));
             }
@@ -600,11 +542,7 @@
                     });
                 }
                 
-                document.getElementById('startTrackingBtn').style.display = 'block';
-                document.getElementById('stopTrackingBtn').style.display = 'none';
-                document.getElementById('status').textContent = '중지됨';
-                document.getElementById('status').style.color = '#FF3E3E';
-                
+                updateStatusDisplay();
                 StateManager.saveState();
                 console.log('Route tracking stopped');
             }
@@ -627,78 +565,6 @@
             console.log('Point added:', lat, lng, 'Total:', routeCoordinates.length);
         }
 
-        // ============= ⭐⭐⭐ 경로 그리기 (스무딩 적용!) ⭐⭐⭐ =============
-        function updateRoute() {
-            // ⭐ naver 객체 체크 추가
-            if (typeof naver === 'undefined' || !naver.maps) {
-                console.error('Naver Maps not loaded yet');
-                return;
-            }
-            
-            if (routePath) {
-                routePath.setMap(null);
-            }
-            
-            if (routeCoordinates.length > 1) {
-                // ⭐ 스무딩 적용 (안전한 버전)
-                var pathToRender = smoothPointsSafe(routeCoordinates);
-                
-                routePath = new naver.maps.Polyline({
-                    map: map,
-                    path: pathToRender,
-                    strokeColor: '#4285F4',
-                    strokeOpacity: 0.8,
-                    strokeWeight: isFloatingMode ? 3 : 5,
-                    strokeLineCap: 'round',      // ⭐ 끝을 둥글게
-                    strokeLineJoin: 'round'      // ⭐ 연결 부분 둥글게
-                });
-                
-                console.log('Route updated: ' + routeCoordinates.length + ' points → ' + pathToRender.length + ' smoothed');
-            }
-        }
-        
-        // ⭐⭐⭐ 부드러운 라인을 위한 스무딩 함수 (안전한 버전) ⭐⭐⭐
-        function smoothPointsSafe(points) {
-            // naver 객체 체크
-            if (typeof naver === 'undefined' || !naver.maps) {
-                return points;
-            }
-            
-            // 포인트가 3개 미만이면 스무딩 불가
-            if (points.length < 3) return points;
-            
-            var smoothed = [];
-            
-            // 첫 번째 포인트는 그대로
-            smoothed.push(points[0]);
-            
-            // 중간 포인트들에 3점 이동 평균 적용
-            for (var i = 1; i < points.length - 1; i++) {
-                var prev = points[i - 1];
-                var curr = points[i];
-                var next = points[i + 1];
-                
-                // 3점 평균 계산
-                var avgLat = (prev.lat() + curr.lat() + next.lat()) / 3;
-                var avgLng = (prev.lng() + curr.lng() + next.lng()) / 3;
-                
-                // 이전 스무딩 포인트와 현재 평균 사이에 중간점 추가 (더 부드럽게)
-                var lastSmoothed = smoothed[smoothed.length - 1];
-                var midLat = (lastSmoothed.lat() + avgLat) / 2;
-                var midLng = (lastSmoothed.lng() + avgLng) / 2;
-                
-                // 중간점 추가
-                smoothed.push(new naver.maps.LatLng(midLat, midLng));
-                // 평균점 추가
-                smoothed.push(new naver.maps.LatLng(avgLat, avgLng));
-            }
-            
-            // 마지막 포인트는 그대로
-            smoothed.push(points[points.length - 1]);
-            
-            return smoothed;
-        }
-
         function clearRoute() {
             routeCoordinates = [];
             isTracking = false;
@@ -719,15 +585,72 @@
                 endMarker = null;
             }
             
-            document.getElementById('status').textContent = '초기화됨';
-            document.getElementById('status').style.color = '#999';
             document.getElementById('pointCount').textContent = '0';
             document.getElementById('distance').textContent = '0';
-            document.getElementById('startTrackingBtn').style.display = 'block';
-            document.getElementById('stopTrackingBtn').style.display = 'none';
+            updateStatusDisplay();
             
             StateManager.clearState();
             console.log('Route cleared');
+        }
+
+        // ============= 경로 그리기 (스무딩 적용) =============
+        function updateRoute() {
+            if (typeof naver === 'undefined' || !naver.maps) {
+                console.error('Naver Maps not loaded yet');
+                return;
+            }
+            
+            if (routePath) {
+                routePath.setMap(null);
+            }
+            
+            if (routeCoordinates.length > 1) {
+                var pathToRender = smoothPointsSafe(routeCoordinates);
+                
+                routePath = new naver.maps.Polyline({
+                    map: map,
+                    path: pathToRender,
+                    strokeColor: '#4285F4',
+                    strokeOpacity: 0.8,
+                    strokeWeight: isFloatingMode ? 3 : 5,
+                    strokeLineCap: 'round',
+                    strokeLineJoin: 'round'
+                });
+                
+                console.log('Route updated: ' + routeCoordinates.length + ' points → ' + pathToRender.length + ' smoothed');
+            }
+        }
+        
+        // 부드러운 라인을 위한 스무딩 함수
+        function smoothPointsSafe(points) {
+            if (typeof naver === 'undefined' || !naver.maps) {
+                return points;
+            }
+            
+            if (points.length < 3) return points;
+            
+            var smoothed = [];
+            smoothed.push(points[0]);
+            
+            for (var i = 1; i < points.length - 1; i++) {
+                var prev = points[i - 1];
+                var curr = points[i];
+                var next = points[i + 1];
+                
+                var avgLat = (prev.lat() + curr.lat() + next.lat()) / 3;
+                var avgLng = (prev.lng() + curr.lng() + next.lng()) / 3;
+                
+                var lastSmoothed = smoothed[smoothed.length - 1];
+                var midLat = (lastSmoothed.lat() + avgLat) / 2;
+                var midLng = (lastSmoothed.lng() + avgLng) / 2;
+                
+                smoothed.push(new naver.maps.LatLng(midLat, midLng));
+                smoothed.push(new naver.maps.LatLng(avgLat, avgLng));
+            }
+            
+            smoothed.push(points[points.length - 1]);
+            
+            return smoothed;
         }
 
         // ============= 유틸리티 함수들 =============
@@ -752,48 +675,6 @@
                 document.getElementById('lng').textContent = lng.toFixed(6);
                 document.getElementById('accuracy').textContent = accuracy ? accuracy.toFixed(1) + 'm' : 'N/A';
             }
-        }
-
-        // ============= 버튼 이벤트 리스너 (일반 모드만) =============
-        if (!isFloatingMode) {
-            document.getElementById('myLocationBtn').addEventListener('click', function() {
-                if (window.NaverMapBridge.userLocation) {
-                    map.setCenter(window.NaverMapBridge.userLocation);
-                    map.setZoom(17);
-                    StateManager.saveState();
-                } else {
-                    alert('GPS 위치를 받아오는 중입니다...');
-                }
-            });
-
-            document.getElementById('startTrackingBtn').addEventListener('click', function() {
-                startTracking();
-                window.location.href = 'unity://start_tracking';
-            });
-
-            document.getElementById('stopTrackingBtn').addEventListener('click', function() {
-                stopTracking();
-                window.location.href = 'unity://stop_tracking';
-            });
-
-            document.getElementById('clearRouteBtn').addEventListener('click', function() {
-                if (routeCoordinates.length > 0) {
-                    if (confirm('경로를 초기화하시겠습니까?\n저장된 모든 경로가 삭제됩니다.')) {
-                        clearRoute();
-                        window.location.href = 'unity://clear_route';
-                    }
-                } else {
-                    alert('초기화할 경로가 없습니다.');
-                }
-            });
-
-            document.getElementById('saveMapBtn').addEventListener('click', function() {
-                if (routeCoordinates.length > 0) {
-                    window.location.href = 'unity://save_static_map';
-                } else {
-                    alert('저장할 경로가 없습니다.');
-                }
-            });
         }
 
         // ============= 스와이프 방지 =============
@@ -916,7 +797,6 @@
 
         // ============= 초기화 실행 =============
         window.onload = function() {
-            // ⭐ 네이버 맵 API 로드 확인 후 초기화
             if (typeof naver !== 'undefined' && naver.maps) {
                 initMap();
             } else {
