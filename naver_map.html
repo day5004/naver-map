@@ -593,7 +593,7 @@
             console.log('Route cleared');
         }
 
-        // ============= 경로 그리기 (스무딩 적용) =============
+        // ============= 경로 그리기 (직선 연결로 수정) =============
         function updateRoute() {
             if (typeof naver === 'undefined' || !naver.maps) {
                 console.error('Naver Maps not loaded yet');
@@ -605,7 +605,8 @@
             }
             
             if (routeCoordinates.length > 1) {
-                var pathToRender = smoothPointsSafe(routeCoordinates);
+                // ✅ 수정: 스무딩 제거, 원본 GPS 포인트 사용
+                var pathToRender = routeCoordinates;
                 
                 routePath = new naver.maps.Polyline({
                     map: map,
@@ -613,15 +614,15 @@
                     strokeColor: '#4285F4',
                     strokeOpacity: 0.8,
                     strokeWeight: isFloatingMode ? 3 : 5,
-                    strokeLineCap: 'round',
-                    strokeLineJoin: 'round'
+                    strokeLineCap: 'butt',      // ✅ round → butt
+                    strokeLineJoin: 'miter'     // ✅ round → miter
                 });
                 
-                console.log('Route updated: ' + routeCoordinates.length + ' points → ' + pathToRender.length + ' smoothed');
+                console.log('Route updated: ' + routeCoordinates.length + ' points');
             }
         }
         
-        // 부드러운 라인을 위한 스무딩 함수
+        // 부드러운 라인을 위한 스무딩 함수 (사용하지 않음 - 나중을 위해 보관)
         function smoothPointsSafe(points) {
             if (typeof naver === 'undefined' || !naver.maps) {
                 return points;
