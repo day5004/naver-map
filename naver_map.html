@@ -270,7 +270,7 @@
                     }
                 }
                 
-                // 사용자 마커 업데이트
+                // 사용자 마커 업데이트 (파란색 현재 위치)
                 if (userMarker) {
                     userMarker.setPosition(this.userLocation);
                 } else if (map) {
@@ -290,10 +290,11 @@
                     startTracking();
                 }
                 
-                // 경로 추적 중이면 경로에 추가
+                // ⭐ 경로 추적 중이면 경로에 추가
                 if (isTracking) {
                     if (routeCoordinates.length === 0) {
-                        addRoutePoint(lat, lng);
+                        // ⭐ 첫 번째 포인트: 시작 마커도 함께 생성!
+                        addFirstRoutePoint(lat, lng);
                     } else {
                         const lastPoint = routeCoordinates[routeCoordinates.length - 1];
                         const distance = calculateDistance(
@@ -346,6 +347,21 @@
             
             clearRoute: function() {
                 clearRoute();
+            },
+            
+            // ⭐ 새로 추가: 마커만 클리어
+            clearMarkers: function() {
+                clearMarkers();
+            },
+            
+            // ⭐ 새로 추가: 시작 마커 추가 (Unity에서 직접 호출 가능)
+            addStartMarker: function(lat, lng) {
+                addStartMarkerAt(lat, lng);
+            },
+            
+            // ⭐ 새로 추가: 현재 위치 마커 업데이트 (Unity에서 직접 호출 가능)
+            updateCurrentLocation: function(lat, lng) {
+                updateCurrentMarker(lat, lng);
             },
             
             addRoutePoint: function(lat, lng) {
@@ -486,6 +502,102 @@
             console.log('State restored from:', state.lastUpdate);
         }
 
+        // ============= ⭐ 새로 추가: 첫 번째 경로 포인트 + 시작 마커 =============
+        function addFirstRoutePoint(lat, lng) {
+            if (typeof naver === 'undefined' || !naver.maps) return;
+            
+            const point = new naver.maps.LatLng(lat, lng);
+            routeCoordinates.push(point);
+            
+            // ⭐ 시작 마커 (녹색) 생성
+            if (startMarker) {
+                startMarker.setMap(null);
+            }
+            startMarker = new naver.maps.Marker({
+                position: point,
+                map: map,
+                icon: {
+                    content: '<div style="width:15px;height:15px;background:#00C73C;border-radius:50%;border:2px solid white;box-shadow:0 2px 4px rgba(0,0,0,0.3);"></div>',
+                    anchor: new naver.maps.Point(9, 9)
+                },
+                zIndex: 90
+            });
+            
+            // 지도 중심 이동
+            map.setCenter(point);
+            
+            document.getElementById('pointCount').textContent = routeCoordinates.length;
+            
+            StateManager.saveState();
+            console.log('🟢 FIRST point + START marker added:', lat, lng);
+        }
+
+        // ============= ⭐ 새로 추가: 시작 마커만 추가 =============
+        function addStartMarkerAt(lat, lng) {
+            if (typeof naver === 'undefined' || !naver.maps) return;
+            
+            const point = new naver.maps.LatLng(lat, lng);
+            
+            if (startMarker) {
+                startMarker.setMap(null);
+            }
+            startMarker = new naver.maps.Marker({
+                position: point,
+                map: map,
+                icon: {
+                    content: '<div style="width:15px;height:15px;background:#00C73C;border-radius:50%;border:2px solid white;box-shadow:0 2px 4px rgba(0,0,0,0.3);"></div>',
+                    anchor: new naver.maps.Point(9, 9)
+                },
+                zIndex: 90
+            });
+            
+            console.log('🟢 Start marker added at:', lat, lng);
+        }
+
+        // ============= ⭐ 새로 추가: 현재 위치 마커 업데이트 =============
+        function updateCurrentMarker(lat, lng) {
+            if (typeof naver === 'undefined' || !naver.maps) return;
+            
+            const point = new naver.maps.LatLng(lat, lng);
+            window.NaverMapBridge.userLocation = point;
+            
+            if (userMarker) {
+                userMarker.setPosition(point);
+            } else if (map) {
+                userMarker = new naver.maps.Marker({
+                    position: point,
+                    map: map,
+                    icon: {
+                        content: '<div style="width:20px;height:20px;background:#4285F4;border-radius:50%;border:3px solid white;box-shadow:0 2px 6px rgba(0,0,0,0.3);"></div>',
+                        anchor: new naver.maps.Point(13, 13)
+                    },
+                    zIndex: 100
+                });
+            }
+            
+            console.log('🔵 Current marker updated at:', lat, lng);
+        }
+
+        // ============= ⭐ 새로 추가: 마커만 클리어 =============
+        function clearMarkers() {
+            if (startMarker) {
+                startMarker.setMap(null);
+                startMarker = null;
+            }
+            
+            if (endMarker) {
+                endMarker.setMap(null);
+                endMarker = null;
+            }
+            
+            if (userMarker) {
+                userMarker.setMap(null);
+                userMarker = null;
+            }
+            
+            console.log('All markers cleared');
+        }
+
         // ============= 경로 추적 함수들 (Unity에서 호출) =============
         function startTracking() {
             if (typeof naver === 'undefined' || !naver.maps) return;
@@ -493,25 +605,11 @@
             if (!isTracking) {
                 isTracking = true;
                 
+                // ⭐ 수정: routeCoordinates가 비어있으면 첫 GPS 대기
+                // (시작 마커는 첫 GPS 수신 시 addFirstRoutePoint에서 생성)
                 if (routeCoordinates.length === 0) {
                     totalDistance = 0;
-                    
-                    if (window.NaverMapBridge.userLocation) {
-                        routeCoordinates.push(window.NaverMapBridge.userLocation);
-                        
-                        if (startMarker) {
-                            startMarker.setMap(null);
-                        }
-                        startMarker = new naver.maps.Marker({
-                            position: window.NaverMapBridge.userLocation,
-                            map: map,
-                            icon: {
-                                content: '<div style="width:15px;height:15px;background:#00C73C;border-radius:50%;border:2px solid white;box-shadow:0 2px 4px rgba(0,0,0,0.3);"></div>',
-                                anchor: new naver.maps.Point(9, 9)
-                            },
-                            zIndex: 90
-                        });
-                    }
+                    console.log('🟢 Tracking started - waiting for first GPS...');
                 }
                 
                 updateStatusDisplay();
@@ -585,12 +683,18 @@
                 endMarker = null;
             }
             
+            // ⭐ 현재 위치 마커도 클리어
+            if (userMarker) {
+                userMarker.setMap(null);
+                userMarker = null;
+            }
+            
             document.getElementById('pointCount').textContent = '0';
             document.getElementById('distance').textContent = '0';
             updateStatusDisplay();
             
             StateManager.clearState();
-            console.log('Route cleared');
+            console.log('Route cleared (including all markers)');
         }
 
         // ============= 경로 그리기 (직선 연결로 수정) =============
@@ -735,6 +839,9 @@
         window.stopRoute = stopTracking;
         window.clearRoute = clearRoute;
         window.addRoutePoint = addRoutePoint;
+        window.clearMarkers = clearMarkers;
+        window.addStartMarker = addStartMarkerAt;
+        window.updateCurrentLocation = updateCurrentMarker;
         
         window.restoreRoute = function(pointsJson) {
             if (typeof naver === 'undefined' || !naver.maps) {
