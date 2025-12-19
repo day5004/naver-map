@@ -144,6 +144,19 @@
     </div>
 
     <script>
+        // ============= ⭐⭐⭐ Unity 통신 브릿지 (맨 처음에 정의!) ⭐⭐⭐ =============
+        window.Unity = {
+            call: function(message) {
+                console.log('Unity call:', message);
+                try {
+                    // GPM WebView scheme 방식으로 Unity에 메시지 전달
+                    window.location.href = 'toapp://' + encodeURIComponent(message);
+                } catch (e) {
+                    console.error('Unity call error:', e);
+                }
+            }
+        };
+        
         // ============= 플로팅 모드 감지 =============
         const urlParams = new URLSearchParams(window.location.search);
         const isFloatingMode = urlParams.get('floating') === 'true';
@@ -237,7 +250,6 @@
                 return state;
             },
             
-            // ⭐ Unity에서 추적 상태 설정
             setTrackingState: function(state) {
                 console.log('Unity tracking state:', state);
                 this.isTrackingFromUnity = state;
@@ -258,7 +270,6 @@
                 
                 this.userLocation = new naver.maps.LatLng(lat, lng);
                 
-                // 플로팅 모드에서 첫 GPS 수신시 자동 추적 시작
                 if (isFloatingMode && !isTracking && !autoStartTriggered && this.userLocation) {
                     console.log('🚀 Auto-starting tracking in floating mode');
                     autoStartTriggered = true;
@@ -270,7 +281,6 @@
                     }
                 }
                 
-                // 사용자 마커 업데이트 (파란색 현재 위치)
                 if (userMarker) {
                     userMarker.setPosition(this.userLocation);
                 } else if (map) {
@@ -285,15 +295,12 @@
                     });
                 }
                 
-                // Unity 추적 상태와 동기화
                 if (this.isTrackingFromUnity && !isTracking) {
                     startTracking();
                 }
                 
-                // ⭐ 경로 추적 중이면 경로에 추가
                 if (isTracking) {
                     if (routeCoordinates.length === 0) {
-                        // ⭐ 첫 번째 포인트: 시작 마커도 함께 생성!
                         addFirstRoutePoint(lat, lng);
                     } else {
                         const lastPoint = routeCoordinates[routeCoordinates.length - 1];
@@ -336,7 +343,6 @@
                 }
             },
             
-            // ⭐ Unity에서 호출하는 함수들
             startTracking: function() {
                 startTracking();
             },
@@ -349,17 +355,14 @@
                 clearRoute();
             },
             
-            // ⭐ 새로 추가: 마커만 클리어
             clearMarkers: function() {
                 clearMarkers();
             },
             
-            // ⭐ 새로 추가: 시작 마커 추가 (Unity에서 직접 호출 가능)
             addStartMarker: function(lat, lng) {
                 addStartMarkerAt(lat, lng);
             },
             
-            // ⭐ 새로 추가: 현재 위치 마커 업데이트 (Unity에서 직접 호출 가능)
             updateCurrentLocation: function(lat, lng) {
                 updateCurrentMarker(lat, lng);
             },
@@ -502,14 +505,13 @@
             console.log('State restored from:', state.lastUpdate);
         }
 
-        // ============= ⭐ 새로 추가: 첫 번째 경로 포인트 + 시작 마커 =============
+        // ============= 첫 번째 경로 포인트 + 시작 마커 =============
         function addFirstRoutePoint(lat, lng) {
             if (typeof naver === 'undefined' || !naver.maps) return;
             
             const point = new naver.maps.LatLng(lat, lng);
             routeCoordinates.push(point);
             
-            // ⭐ 시작 마커 (녹색) 생성
             if (startMarker) {
                 startMarker.setMap(null);
             }
@@ -523,7 +525,6 @@
                 zIndex: 90
             });
             
-            // 지도 중심 이동
             map.setCenter(point);
             
             document.getElementById('pointCount').textContent = routeCoordinates.length;
@@ -532,7 +533,7 @@
             console.log('🟢 FIRST point + START marker added:', lat, lng);
         }
 
-        // ============= ⭐ 새로 추가: 시작 마커만 추가 =============
+        // ============= 시작 마커만 추가 =============
         function addStartMarkerAt(lat, lng) {
             if (typeof naver === 'undefined' || !naver.maps) return;
             
@@ -554,7 +555,7 @@
             console.log('🟢 Start marker added at:', lat, lng);
         }
 
-        // ============= ⭐ 새로 추가: 현재 위치 마커 업데이트 =============
+        // ============= 현재 위치 마커 업데이트 =============
         function updateCurrentMarker(lat, lng) {
             if (typeof naver === 'undefined' || !naver.maps) return;
             
@@ -578,7 +579,7 @@
             console.log('🔵 Current marker updated at:', lat, lng);
         }
 
-        // ============= ⭐ 새로 추가: 마커만 클리어 =============
+        // ============= 마커만 클리어 =============
         function clearMarkers() {
             if (startMarker) {
                 startMarker.setMap(null);
@@ -598,15 +599,13 @@
             console.log('All markers cleared');
         }
 
-        // ============= 경로 추적 함수들 (Unity에서 호출) =============
+        // ============= 경로 추적 함수들 =============
         function startTracking() {
             if (typeof naver === 'undefined' || !naver.maps) return;
             
             if (!isTracking) {
                 isTracking = true;
                 
-                // ⭐ 수정: routeCoordinates가 비어있으면 첫 GPS 대기
-                // (시작 마커는 첫 GPS 수신 시 addFirstRoutePoint에서 생성)
                 if (routeCoordinates.length === 0) {
                     totalDistance = 0;
                     console.log('🟢 Tracking started - waiting for first GPS...');
@@ -683,7 +682,6 @@
                 endMarker = null;
             }
             
-            // ⭐ 현재 위치 마커도 클리어
             if (userMarker) {
                 userMarker.setMap(null);
                 userMarker = null;
@@ -697,7 +695,7 @@
             console.log('Route cleared (including all markers)');
         }
 
-        // ============= 경로 그리기 (직선 연결로 수정) =============
+        // ============= 경로 그리기 =============
         function updateRoute() {
             if (typeof naver === 'undefined' || !naver.maps) {
                 console.error('Naver Maps not loaded yet');
@@ -709,7 +707,6 @@
             }
             
             if (routeCoordinates.length > 1) {
-                // ✅ 수정: 스무딩 제거, 원본 GPS 포인트 사용
                 var pathToRender = routeCoordinates;
                 
                 routePath = new naver.maps.Polyline({
@@ -718,44 +715,12 @@
                     strokeColor: '#4285F4',
                     strokeOpacity: 0.8,
                     strokeWeight: isFloatingMode ? 3 : 5,
-                    strokeLineCap: 'butt',      // ✅ round → butt
-                    strokeLineJoin: 'miter'     // ✅ round → miter
+                    strokeLineCap: 'butt',
+                    strokeLineJoin: 'miter'
                 });
                 
                 console.log('Route updated: ' + routeCoordinates.length + ' points');
             }
-        }
-        
-        // 부드러운 라인을 위한 스무딩 함수 (사용하지 않음 - 나중을 위해 보관)
-        function smoothPointsSafe(points) {
-            if (typeof naver === 'undefined' || !naver.maps) {
-                return points;
-            }
-            
-            if (points.length < 3) return points;
-            
-            var smoothed = [];
-            smoothed.push(points[0]);
-            
-            for (var i = 1; i < points.length - 1; i++) {
-                var prev = points[i - 1];
-                var curr = points[i];
-                var next = points[i + 1];
-                
-                var avgLat = (prev.lat() + curr.lat() + next.lat()) / 3;
-                var avgLng = (prev.lng() + curr.lng() + next.lng()) / 3;
-                
-                var lastSmoothed = smoothed[smoothed.length - 1];
-                var midLat = (lastSmoothed.lat() + avgLat) / 2;
-                var midLng = (lastSmoothed.lng() + avgLng) / 2;
-                
-                smoothed.push(new naver.maps.LatLng(midLat, midLng));
-                smoothed.push(new naver.maps.LatLng(avgLat, avgLng));
-            }
-            
-            smoothed.push(points[points.length - 1]);
-            
-            return smoothed;
         }
 
         // ============= 유틸리티 함수들 =============
@@ -903,6 +868,203 @@
             }
         };
 
+        // ============= ⭐⭐⭐ 전체 경로 캡처 시스템 ⭐⭐⭐ =============
+        
+        let captureState = {
+            isCapturing: false,
+            tiles: [],
+            currentTileIndex: 0,
+            originalCenter: null,
+            originalZoom: null,
+            captureZoom: 16,
+            tileOverlap: 0.1,
+            cols: 0,
+            rows: 0
+        };
+
+        window.NaverMapBridge.startFullRouteCapture = function(zoom) {
+            if (captureState.isCapturing) {
+                console.log('Already capturing...');
+                return;
+            }
+            
+            if (routeCoordinates.length < 2) {
+                console.log('No route to capture');
+                window.Unity.call('N/CAPTURE_ERROR:No route data');
+                return;
+            }
+            
+            console.log('🎬 Starting full route capture...');
+            captureState.isCapturing = true;
+            captureState.captureZoom = zoom || 16;
+            
+            captureState.originalCenter = map.getCenter();
+            captureState.originalZoom = map.getZoom();
+            
+            calculateCaptureTiles();
+            
+            captureState.currentTileIndex = 0;
+            
+            var info = {
+                totalTiles: captureState.tiles.length,
+                zoom: captureState.captureZoom,
+                cols: captureState.cols,
+                rows: captureState.rows
+            };
+            
+            console.log('Capture info:', info);
+            window.Unity.call('N/CAPTURE_START:' + JSON.stringify(info));
+            
+            moveToNextTile();
+        };
+
+        function calculateCaptureTiles() {
+            var bounds = new naver.maps.LatLngBounds();
+            routeCoordinates.forEach(function(coord) {
+                bounds.extend(coord);
+            });
+            
+            var sw = bounds.getSW();
+            var ne = bounds.getNE();
+            
+            console.log('Route bounds:', sw.lat(), sw.lng(), 'to', ne.lat(), ne.lng());
+            
+            var metersPerPixel = getMetersPerPixelAtZoom(captureState.captureZoom);
+            var screenWidthMeters = metersPerPixel * window.innerWidth;
+            var screenHeightMeters = metersPerPixel * window.innerHeight;
+            
+            var effectiveWidth = screenWidthMeters * (1 - captureState.tileOverlap);
+            var effectiveHeight = screenHeightMeters * (1 - captureState.tileOverlap);
+            
+            var latPerTile = effectiveHeight / 111000;
+            var lngPerTile = effectiveWidth / (111000 * Math.cos(((sw.lat() + ne.lat()) / 2) * Math.PI / 180));
+            
+            var latRange = ne.lat() - sw.lat();
+            var lngRange = ne.lng() - sw.lng();
+            
+            var marginLat = latPerTile * 0.3;
+            var marginLng = lngPerTile * 0.3;
+            
+            var cols = Math.ceil((lngRange + marginLng * 2) / lngPerTile);
+            var rows = Math.ceil((latRange + marginLat * 2) / latPerTile);
+            
+            cols = Math.max(1, Math.min(cols, 5));
+            rows = Math.max(1, Math.min(rows, 5));
+            
+            captureState.cols = cols;
+            captureState.rows = rows;
+            
+            console.log('Grid:', cols, 'x', rows, '=', cols * rows, 'tiles');
+            
+            captureState.tiles = [];
+            
+            var startLat = sw.lat() - marginLat + (latPerTile / 2);
+            var startLng = sw.lng() - marginLng + (lngPerTile / 2);
+            
+            var index = 0;
+            for (var row = 0; row < rows; row++) {
+                for (var col = 0; col < cols; col++) {
+                    var tileLat = startLat + (row * latPerTile);
+                    var tileLng = startLng + (col * lngPerTile);
+                    
+                    captureState.tiles.push({
+                        lat: tileLat,
+                        lng: tileLng,
+                        row: row,
+                        col: col,
+                        index: index++
+                    });
+                }
+            }
+            
+            console.log('Tiles calculated:', captureState.tiles.length);
+        }
+
+        function getMetersPerPixelAtZoom(zoom) {
+            var metersPerPixel = {
+                10: 76,
+                11: 38,
+                12: 19,
+                13: 9.5,
+                14: 4.8,
+                15: 2.4,
+                16: 1.2,
+                17: 0.6,
+                18: 0.3
+            };
+            return metersPerPixel[zoom] || 2.4;
+        }
+
+        function moveToNextTile() {
+            if (captureState.currentTileIndex >= captureState.tiles.length) {
+                finishCapture();
+                return;
+            }
+            
+            var tile = captureState.tiles[captureState.currentTileIndex];
+            console.log('Moving to tile', tile.index + 1, '/', captureState.tiles.length);
+            
+            map.setZoom(captureState.captureZoom);
+            map.setCenter(new naver.maps.LatLng(tile.lat, tile.lng));
+            
+            setTimeout(function() {
+                requestTileCapture(tile);
+            }, 1200);
+        }
+
+        function requestTileCapture(tile) {
+            var data = {
+                index: tile.index,
+                row: tile.row,
+                col: tile.col,
+                total: captureState.tiles.length
+            };
+            
+            console.log('Requesting capture for tile:', data);
+            window.Unity.call('N/CAPTURE_TILE:' + JSON.stringify(data));
+        }
+
+        window.NaverMapBridge.onTileCaptured = function(tileIndex) {
+            console.log('Tile captured:', tileIndex);
+            
+            captureState.currentTileIndex++;
+            
+            var progress = Math.round((captureState.currentTileIndex / captureState.tiles.length) * 100);
+            window.Unity.call('N/CAPTURE_PROGRESS:' + progress);
+            
+            moveToNextTile();
+        };
+
+        function finishCapture() {
+            console.log('🎬 All tiles captured!');
+            
+            if (captureState.originalCenter && captureState.originalZoom) {
+                map.setCenter(captureState.originalCenter);
+                map.setZoom(captureState.originalZoom);
+            }
+            
+            captureState.isCapturing = false;
+            
+            window.Unity.call('N/CAPTURE_COMPLETE:' + JSON.stringify({
+                cols: captureState.cols,
+                rows: captureState.rows,
+                total: captureState.tiles.length
+            }));
+        }
+
+        window.NaverMapBridge.cancelCapture = function() {
+            if (captureState.isCapturing) {
+                captureState.isCapturing = false;
+                
+                if (captureState.originalCenter && captureState.originalZoom) {
+                    map.setCenter(captureState.originalCenter);
+                    map.setZoom(captureState.originalZoom);
+                }
+                
+                console.log('Capture cancelled');
+            }
+        };
+
         // ============= 초기화 실행 =============
         window.onload = function() {
             if (typeof naver !== 'undefined' && naver.maps) {
@@ -913,263 +1075,6 @@
             }
             console.log('Map initialization started' + (isFloatingMode ? ' [FLOATING MODE]' : ' [NORMAL MODE]'));
         };
-
-
-// ============= 전체 경로 캡처 시스템 =============
-
-// 캡처 상태 변수
-let captureState = {
-    isCapturing: false,
-    tiles: [],           // 캡처할 타일 정보 [{lat, lng, index}]
-    currentTileIndex: 0,
-    originalCenter: null,
-    originalZoom: null,
-    captureZoom: 16,     // 캡처 시 줌 레벨 (높을수록 상세)
-    tileOverlap: 0.1     // 타일 간 10% 겹침 (이음새 방지)
-};
-
-/**
- * ⭐ Unity에서 호출 - 전체 경로 고해상도 캡처 시작
- */
-window.NaverMapBridge.startFullRouteCapture = function(zoom) {
-    if (captureState.isCapturing) {
-        console.log('Already capturing...');
-        return;
-    }
-    
-    if (routeCoordinates.length < 2) {
-        console.log('No route to capture');
-        if (window.Unity) {
-            window.Unity.call('N/CAPTURE_ERROR:No route data');
-        }
-        return;
-    }
-    
-    console.log('🎬 Starting full route capture...');
-    captureState.isCapturing = true;
-    captureState.captureZoom = zoom || 16;
-    
-    // 현재 상태 저장 (나중에 복원용)
-    captureState.originalCenter = map.getCenter();
-    captureState.originalZoom = map.getZoom();
-    
-    // 캡처할 타일 계산
-    calculateCaptureTiles();
-    
-    // 첫 번째 타일부터 캡처 시작
-    captureState.currentTileIndex = 0;
-    
-    // Unity에 타일 정보 전달
-    var info = {
-        totalTiles: captureState.tiles.length,
-        zoom: captureState.captureZoom,
-        cols: captureState.cols,
-        rows: captureState.rows
-    };
-    
-    console.log('Capture info:', info);
-    
-    if (window.Unity) {
-        window.Unity.call('N/CAPTURE_START:' + JSON.stringify(info));
-    }
-    
-    // 첫 타일로 이동
-    moveToNextTile();
-};
-
-/**
- * 경로 범위 기반으로 캡처할 타일 계산
- */
-function calculateCaptureTiles() {
-    // 경로 범위 계산
-    var bounds = new naver.maps.LatLngBounds();
-    routeCoordinates.forEach(function(coord) {
-        bounds.extend(coord);
-    });
-    
-    var sw = bounds.getSW();  // 남서쪽 (min lat, min lng)
-    var ne = bounds.getNE();  // 북동쪽 (max lat, max lng)
-    
-    console.log('Route bounds:', sw.lat(), sw.lng(), 'to', ne.lat(), ne.lng());
-    
-    // 줌 레벨에서 한 화면에 보이는 범위 계산 (미터)
-    var metersPerPixel = getMetersPerPixelAtZoom(captureState.captureZoom);
-    var screenWidthMeters = metersPerPixel * window.innerWidth;
-    var screenHeightMeters = metersPerPixel * window.innerHeight;
-    
-    // 겹침 적용
-    var effectiveWidth = screenWidthMeters * (1 - captureState.tileOverlap);
-    var effectiveHeight = screenHeightMeters * (1 - captureState.tileOverlap);
-    
-    // 미터 → 위도/경도 변환
-    var latPerTile = effectiveHeight / 111000;
-    var lngPerTile = effectiveWidth / (111000 * Math.cos(((sw.lat() + ne.lat()) / 2) * Math.PI / 180));
-    
-    // 필요한 행/열 수 계산
-    var latRange = ne.lat() - sw.lat();
-    var lngRange = ne.lng() - sw.lng();
-    
-    // 마진 추가 (경로가 가장자리에 걸리지 않도록)
-    var marginLat = latPerTile * 0.3;
-    var marginLng = lngPerTile * 0.3;
-    
-    var cols = Math.ceil((lngRange + marginLng * 2) / lngPerTile);
-    var rows = Math.ceil((latRange + marginLat * 2) / latPerTile);
-    
-    // 최소/최대 제한
-    cols = Math.max(1, Math.min(cols, 5));  // 1~5열
-    rows = Math.max(1, Math.min(rows, 5));  // 1~5행
-    
-    captureState.cols = cols;
-    captureState.rows = rows;
-    
-    console.log('Grid:', cols, 'x', rows, '=', cols * rows, 'tiles');
-    
-    // 타일 중심점 계산
-    captureState.tiles = [];
-    
-    var startLat = sw.lat() - marginLat + (latPerTile / 2);
-    var startLng = sw.lng() - marginLng + (lngPerTile / 2);
-    
-    var index = 0;
-    for (var row = 0; row < rows; row++) {
-        for (var col = 0; col < cols; col++) {
-            var tileLat = startLat + (row * latPerTile);
-            var tileLng = startLng + (col * lngPerTile);
-            
-            captureState.tiles.push({
-                lat: tileLat,
-                lng: tileLng,
-                row: row,
-                col: col,
-                index: index++
-            });
-        }
-    }
-    
-    console.log('Tiles calculated:', captureState.tiles.length);
-}
-
-/**
- * 줌 레벨별 미터/픽셀 반환
- */
-function getMetersPerPixelAtZoom(zoom) {
-    var metersPerPixel = {
-        10: 76,
-        11: 38,
-        12: 19,
-        13: 9.5,
-        14: 4.8,
-        15: 2.4,
-        16: 1.2,
-        17: 0.6,
-        18: 0.3
-    };
-    return metersPerPixel[zoom] || 2.4;
-}
-
-/**
- * 다음 타일로 이동
- */
-function moveToNextTile() {
-    if (captureState.currentTileIndex >= captureState.tiles.length) {
-        // 모든 타일 완료
-        finishCapture();
-        return;
-    }
-    
-    var tile = captureState.tiles[captureState.currentTileIndex];
-    console.log('Moving to tile', tile.index + 1, '/', captureState.tiles.length);
-    
-    // 지도 이동
-    map.setZoom(captureState.captureZoom);
-    map.setCenter(new naver.maps.LatLng(tile.lat, tile.lng));
-    
-    // 타일 로딩 대기 후 캡처 요청
-    setTimeout(function() {
-        requestTileCapture(tile);
-    }, 1200);  // 1.2초 대기 (타일 로딩)
-}
-
-/**
- * 현재 타일 캡처 요청 (Unity/Java에 전달)
- */
-function requestTileCapture(tile) {
-    var data = {
-        index: tile.index,
-        row: tile.row,
-        col: tile.col,
-        total: captureState.tiles.length
-    };
-    
-    console.log('Requesting capture for tile:', data);
-    
-    if (window.Unity) {
-        window.Unity.call('N/CAPTURE_TILE:' + JSON.stringify(data));
-    }
-}
-
-/**
- * ⭐ Unity에서 호출 - 타일 캡처 완료 알림
- */
-window.NaverMapBridge.onTileCaptured = function(tileIndex) {
-    console.log('Tile captured:', tileIndex);
-    
-    // 다음 타일로
-    captureState.currentTileIndex++;
-    
-    // 진행률 업데이트
-    var progress = Math.round((captureState.currentTileIndex / captureState.tiles.length) * 100);
-    if (window.Unity) {
-        window.Unity.call('N/CAPTURE_PROGRESS:' + progress);
-    }
-    
-    // 다음 타일 진행
-    moveToNextTile();
-};
-
-/**
- * 캡처 완료 처리
- */
-function finishCapture() {
-    console.log('🎬 All tiles captured!');
-    
-    // 원래 상태로 복원
-    if (captureState.originalCenter && captureState.originalZoom) {
-        map.setCenter(captureState.originalCenter);
-        map.setZoom(captureState.originalZoom);
-    }
-    
-    captureState.isCapturing = false;
-    
-    // Unity에 완료 알림 (Java에서 이미지 합치기 시작)
-    if (window.Unity) {
-        window.Unity.call('N/CAPTURE_COMPLETE:' + JSON.stringify({
-            cols: captureState.cols,
-            rows: captureState.rows,
-            total: captureState.tiles.length
-        }));
-    }
-}
-
-/**
- * 캡처 취소
- */
-window.NaverMapBridge.cancelCapture = function() {
-    if (captureState.isCapturing) {
-        captureState.isCapturing = false;
-        
-        // 원래 상태 복원
-        if (captureState.originalCenter && captureState.originalZoom) {
-            map.setCenter(captureState.originalCenter);
-            map.setZoom(captureState.originalZoom);
-        }
-        
-        console.log('Capture cancelled');
-    }
-};
-
-        
     </script>
 </body>
 </html>
