@@ -11,15 +11,12 @@
             padding: 0;
             box-sizing: border-box;
             -webkit-user-select: none;
-            -moz-user-select: none;
-            -ms-user-select: none;
             user-select: none;
         }
         
         html, body {
             overflow: hidden;
             touch-action: none;
-            -webkit-overflow-scrolling: touch;
         }
         
         #map {
@@ -28,7 +25,6 @@
             touch-action: manipulation;
         }
         
-        /* === 정보 패널 (우하단) === */
         .info-panel {
             position: absolute;
             bottom: 10px;
@@ -40,6 +36,14 @@
             z-index: 1000;
             font-size: 11px;
             min-width: 150px;
+            transition: opacity 0.3s, visibility 0.3s;
+        }
+        
+        /* ⭐ 캡처 모드에서 완전히 숨기기 */
+        .info-panel.capture-hidden {
+            opacity: 0 !important;
+            visibility: hidden !important;
+            pointer-events: none !important;
         }
         
         .info-row {
@@ -57,11 +61,6 @@
             color: #03CF5D !important;
         }
         
-        .status-stopped {
-            color: #FF3E3E !important;
-        }
-        
-        /* === 플로팅 모드 전용 스타일 === */
         .floating-mode .info-panel {
             position: fixed;
             top: 5px;
@@ -75,14 +74,9 @@
             border-radius: 4px;
         }
         
-        .floating-mode .info-row {
-            margin: 1px 0;
-        }
-        
         .floating-mode .info-row label {
             color: #aaa;
             font-size: 8px;
-            margin-right: 3px;
         }
         
         .floating-mode .info-row span {
@@ -90,33 +84,25 @@
             font-size: 9px;
         }
         
-        /* 플로팅 모드에서 일부 정보 숨김 */
         .floating-mode .info-row.accuracy,
         .floating-mode .info-row.distance {
             display: none;
         }
         
-        /* 지도 컨트롤 숨기기 */
-        .floating-mode .naver-map-control {
+        /* ⭐ 캡처 모드에서 지도 컨트롤도 숨기기 */
+        .capture-mode .naver-map-control,
+        .capture-mode [class*="btn_"],
+        .capture-mode [class*="zoom"] {
             display: none !important;
-        }
-        
-        @media (max-width: 600px) {
-            .info-panel {
-                bottom: 5px;
-                right: 5px;
-                font-size: 10px;
-                padding: 6px 10px;
-                min-width: 130px;
-            }
+            visibility: hidden !important;
         }
     </style>
 </head>
 <body>
     <div id="map"></div>
     
-    <!-- 정보 패널만 표시 (버튼 없음) -->
-    <div class="info-panel">
+    <!-- ⭐ id 추가! -->
+    <div class="info-panel" id="info-panel">
         <div class="info-row">
             <label>위도:</label>
             <span id="lat">0.000000</span>
@@ -144,12 +130,11 @@
     </div>
 
     <script>
-        // ============= ⭐⭐⭐ Unity 통신 브릿지 (맨 처음에 정의!) ⭐⭐⭐ =============
+        // Unity 통신 브릿지
         window.Unity = {
             call: function(message) {
                 console.log('Unity call:', message);
                 try {
-                    // GPM WebView scheme 방식으로 Unity에 메시지 전달
                     window.location.href = 'toapp://' + encodeURIComponent(message);
                 } catch (e) {
                     console.error('Unity call error:', e);
@@ -157,71 +142,45 @@
             }
         };
         
-        // ============= 플로팅 모드 감지 =============
         const urlParams = new URLSearchParams(window.location.search);
         const isFloatingMode = urlParams.get('floating') === 'true';
         
         if (isFloatingMode) {
-            console.log('🔄 FLOATING MODE ACTIVATED');
+            console.log('FLOATING MODE ACTIVATED');
         }
         
-        // ============= 상태 보존 시스템 =============
+        // 상태 보존
         const StateManager = {
             STORAGE_KEY: 'naverMapState',
             
             saveState: function() {
                 if (typeof map === 'undefined' || !map) return false;
-                
                 const state = {
-                    center: map ? {
-                        lat: map.getCenter().lat(),
-                        lng: map.getCenter().lng()
-                    } : null,
-                    zoom: map ? map.getZoom() : 16,
+                    center: { lat: map.getCenter().lat(), lng: map.getCenter().lng() },
+                    zoom: map.getZoom(),
                     isTracking: isTracking,
-                    routeCoordinates: routeCoordinates.map(coord => ({
-                        lat: coord.lat(),
-                        lng: coord.lng()
-                    })),
+                    routeCoordinates: routeCoordinates.map(coord => ({ lat: coord.lat(), lng: coord.lng() })),
                     totalDistance: totalDistance,
-                    lastUpdate: new Date().toISOString(),
-                    isFloating: isFloatingMode
+                    lastUpdate: new Date().toISOString()
                 };
-                
                 try {
                     localStorage.setItem(this.STORAGE_KEY, JSON.stringify(state));
                     return true;
-                } catch (e) {
-                    console.error('Failed to save state:', e);
-                    return false;
-                }
+                } catch (e) { return false; }
             },
             
             restoreState: function() {
                 try {
                     const savedState = localStorage.getItem(this.STORAGE_KEY);
-                    if (!savedState) return null;
-                    
-                    const state = JSON.parse(savedState);
-                    console.log('State restored:', state);
-                    return state;
-                } catch (e) {
-                    console.error('Failed to restore state:', e);
-                    return null;
-                }
+                    return savedState ? JSON.parse(savedState) : null;
+                } catch (e) { return null; }
             },
             
             clearState: function() {
-                try {
-                    localStorage.removeItem(this.STORAGE_KEY);
-                    console.log('State cleared');
-                } catch (e) {
-                    console.error('Failed to clear state:', e);
-                }
+                try { localStorage.removeItem(this.STORAGE_KEY); } catch (e) {}
             }
         };
 
-        // ============= 전역 변수 =============
         let map;
         let userMarker = null;
         let routePath = null;
@@ -232,49 +191,32 @@
         let totalDistance = 0;
         let autoStartTriggered = false;
 
-        // ============= Unity 브릿지 객체 =============
         window.NaverMapBridge = {
             userLocation: null,
             isTrackingFromUnity: false,
             map: null,
             
-            saveState: function() {
-                return StateManager.saveState();
-            },
-            
+            saveState: function() { return StateManager.saveState(); },
             restoreState: function() {
                 const state = StateManager.restoreState();
-                if (state) {
-                    applyRestoredState(state);
-                }
+                if (state) applyRestoredState(state);
                 return state;
             },
             
             setTrackingState: function(state) {
-                console.log('Unity tracking state:', state);
                 this.isTrackingFromUnity = state;
-                if (state) {
-                    startTracking();
-                } else {
-                    stopTracking();
-                }
+                if (state) startTracking();
+                else stopTracking();
             },
             
             updateLocation: function(lat, lng, accuracy) {
-                console.log('GPS from Plugin:', lat, lng, accuracy);
-                
-                if (typeof naver === 'undefined' || !naver.maps) {
-                    console.error('Naver Maps not loaded yet');
-                    return;
-                }
+                if (typeof naver === 'undefined' || !naver.maps) return;
                 
                 this.userLocation = new naver.maps.LatLng(lat, lng);
                 
                 if (isFloatingMode && !isTracking && !autoStartTriggered && this.userLocation) {
-                    console.log('🚀 Auto-starting tracking in floating mode');
                     autoStartTriggered = true;
                     startTracking();
-                    
                     if (map) {
                         map.setCenter(this.userLocation);
                         map.setZoom(17);
@@ -295,128 +237,65 @@
                     });
                 }
                 
-                if (this.isTrackingFromUnity && !isTracking) {
-                    startTracking();
-                }
+                if (this.isTrackingFromUnity && !isTracking) startTracking();
                 
                 if (isTracking) {
                     if (routeCoordinates.length === 0) {
                         addFirstRoutePoint(lat, lng);
                     } else {
                         const lastPoint = routeCoordinates[routeCoordinates.length - 1];
-                        const distance = calculateDistance(
-                            lastPoint.lat(), lastPoint.lng(),
-                            lat, lng
-                        );
-                        
+                        const distance = calculateDistance(lastPoint.lat(), lastPoint.lng(), lat, lng);
                         const minDistance = isFloatingMode ? 2 : 3;
-                        const maxDistance = 100;
-                        
-                        if (distance > minDistance && distance < maxDistance) {
+                        if (distance > minDistance && distance < 100) {
                             addRoutePoint(lat, lng);
                             totalDistance += distance;
                             document.getElementById('distance').textContent = Math.round(totalDistance);
-                        } else if (distance >= maxDistance) {
-                            console.log('⚠️ GPS jump detected (' + Math.round(distance) + 'm), ignoring');
                         }
                     }
                 }
                 
                 updateInfoPanel(lat, lng, accuracy);
-                
-                if (isFloatingMode || routeCoordinates.length % 5 === 0) {
-                    StateManager.saveState();
-                }
+                if (isFloatingMode || routeCoordinates.length % 5 === 0) StateManager.saveState();
             },
             
             moveToLocation: function(lat, lng) {
                 if (map && typeof naver !== 'undefined') {
                     map.setCenter(new naver.maps.LatLng(lat, lng));
-                    StateManager.saveState();
                 }
             },
             
-            setZoom: function(level) {
-                if (map) {
-                    map.setZoom(level);
-                    StateManager.saveState();
-                }
-            },
-            
-            startTracking: function() {
-                startTracking();
-            },
-            
-            stopTracking: function() {
-                stopTracking();
-            },
-            
-            clearRoute: function() {
-                clearRoute();
-            },
-            
-            clearMarkers: function() {
-                clearMarkers();
-            },
-            
-            addStartMarker: function(lat, lng) {
-                addStartMarkerAt(lat, lng);
-            },
-            
-            updateCurrentLocation: function(lat, lng) {
-                updateCurrentMarker(lat, lng);
-            },
-            
-            addRoutePoint: function(lat, lng) {
-                addRoutePoint(lat, lng);
-            },
+            setZoom: function(level) { if (map) map.setZoom(level); },
+            startTracking: function() { startTracking(); },
+            stopTracking: function() { stopTracking(); },
+            clearRoute: function() { clearRoute(); },
+            clearMarkers: function() { clearMarkers(); },
+            addStartMarker: function(lat, lng) { addStartMarkerAt(lat, lng); },
+            updateCurrentLocation: function(lat, lng) { updateCurrentMarker(lat, lng); },
+            addRoutePoint: function(lat, lng) { addRoutePoint(lat, lng); },
             
             drawRoute: function(pointsArray) {
-                if (typeof naver === 'undefined' || !naver.maps) {
-                    console.error('Naver Maps not loaded yet');
-                    return;
-                }
-                
+                if (typeof naver === 'undefined' || !naver.maps) return;
                 if (!Array.isArray(pointsArray)) {
-                    try {
-                        pointsArray = JSON.parse(pointsArray);
-                    } catch (e) {
-                        console.error('Invalid route data:', e);
-                        return;
-                    }
+                    try { pointsArray = JSON.parse(pointsArray); } catch (e) { return; }
                 }
-                
                 routeCoordinates = [];
                 pointsArray.forEach(p => {
                     routeCoordinates.push(new naver.maps.LatLng(p.lat, p.lng));
                 });
-                
                 updateRoute();
                 document.getElementById('pointCount').textContent = routeCoordinates.length;
             }
         };
 
-        // ============= 지도 초기화 =============
         function initMap() {
             if (typeof naver === 'undefined' || !naver.maps) {
-                console.error('Naver Maps API not loaded');
                 setTimeout(initMap, 500);
                 return;
             }
             
-            if (isFloatingMode) {
-                document.body.classList.add('floating-mode');
-                console.log('Floating mode UI applied');
-            }
+            if (isFloatingMode) document.body.classList.add('floating-mode');
             
             const savedState = StateManager.restoreState();
-            
-            const floatingMapOptions = isFloatingMode ? {
-                draggable: false,
-                scrollWheel: false,
-                disableDoubleClickZoom: true,
-                disableDoubleTapZoom: true
-            } : {};
             
             const mapOptions = {
                 center: savedState && savedState.center ? 
@@ -428,56 +307,36 @@
                 logoControl: false,
                 mapDataControl: false,
                 zoomControl: !isFloatingMode,
-                zoomControlOptions: {
-                    position: naver.maps.Position.TOP_RIGHT
-                },
-                ...floatingMapOptions
+                zoomControlOptions: { position: naver.maps.Position.TOP_RIGHT },
+                draggable: !isFloatingMode,
+                scrollWheel: !isFloatingMode
             };
 
             map = new naver.maps.Map('map', mapOptions);
             window.NaverMapBridge.map = map;
             
             if (!isFloatingMode) {
-                naver.maps.Event.addListener(map, 'dragend', function() {
-                    StateManager.saveState();
-                });
-                
-                naver.maps.Event.addListener(map, 'zoom_changed', function() {
-                    StateManager.saveState();
-                });
+                naver.maps.Event.addListener(map, 'dragend', function() { StateManager.saveState(); });
+                naver.maps.Event.addListener(map, 'zoom_changed', function() { StateManager.saveState(); });
             }
             
-            if (savedState) {
-                applyRestoredState(savedState);
-            }
-            
+            if (savedState) applyRestoredState(savedState);
             updateStatusDisplay();
-            console.log('✅ Map initialized successfully');
+            console.log('Map initialized');
         }
 
-        // ============= 상태 표시 업데이트 =============
         function updateStatusDisplay() {
             const statusEl = document.getElementById('status');
-            if (isFloatingMode) {
-                statusEl.textContent = isTracking ? '플로팅 추적' : '플로팅';
-                statusEl.className = isTracking ? 'status-tracking' : '';
-            } else {
-                statusEl.textContent = isTracking ? '추적 중' : '대기중';
-                statusEl.className = isTracking ? 'status-tracking' : '';
-            }
+            statusEl.textContent = isTracking ? '추적 중' : '대기중';
+            statusEl.className = isTracking ? 'status-tracking' : '';
         }
 
-        // ============= 저장된 상태 적용 =============
         function applyRestoredState(state) {
-            if (!state) return;
-            if (typeof naver === 'undefined' || !naver.maps) return;
+            if (!state || typeof naver === 'undefined') return;
             
             if (state.routeCoordinates && state.routeCoordinates.length > 0) {
-                routeCoordinates = state.routeCoordinates.map(p => 
-                    new naver.maps.LatLng(p.lat, p.lng)
-                );
+                routeCoordinates = state.routeCoordinates.map(p => new naver.maps.LatLng(p.lat, p.lng));
                 totalDistance = state.totalDistance || 0;
-                
                 updateRoute();
                 
                 if (routeCoordinates.length > 0) {
@@ -486,7 +345,7 @@
                         position: routeCoordinates[0],
                         map: map,
                         icon: {
-                            content: '<div style="width:15px;height:15px;background:#00C73C;border-radius:50%;border:2px solid white;box-shadow:0 2px 4px rgba(0,0,0,0.3);"></div>',
+                            content: '<div style="width:15px;height:15px;background:#00C73C;border-radius:50%;border:2px solid white;"></div>',
                             anchor: new naver.maps.Point(9, 9)
                         },
                         zIndex: 90
@@ -501,64 +360,47 @@
                 isTracking = true;
                 updateStatusDisplay();
             }
-            
-            console.log('State restored from:', state.lastUpdate);
         }
 
-        // ============= 첫 번째 경로 포인트 + 시작 마커 =============
         function addFirstRoutePoint(lat, lng) {
-            if (typeof naver === 'undefined' || !naver.maps) return;
+            if (typeof naver === 'undefined') return;
             
             const point = new naver.maps.LatLng(lat, lng);
             routeCoordinates.push(point);
             
-            if (startMarker) {
-                startMarker.setMap(null);
-            }
+            if (startMarker) startMarker.setMap(null);
             startMarker = new naver.maps.Marker({
                 position: point,
                 map: map,
                 icon: {
-                    content: '<div style="width:15px;height:15px;background:#00C73C;border-radius:50%;border:2px solid white;box-shadow:0 2px 4px rgba(0,0,0,0.3);"></div>',
+                    content: '<div style="width:15px;height:15px;background:#00C73C;border-radius:50%;border:2px solid white;"></div>',
                     anchor: new naver.maps.Point(9, 9)
                 },
                 zIndex: 90
             });
             
             map.setCenter(point);
-            
             document.getElementById('pointCount').textContent = routeCoordinates.length;
-            
             StateManager.saveState();
-            console.log('🟢 FIRST point + START marker added:', lat, lng);
         }
 
-        // ============= 시작 마커만 추가 =============
         function addStartMarkerAt(lat, lng) {
-            if (typeof naver === 'undefined' || !naver.maps) return;
-            
+            if (typeof naver === 'undefined') return;
             const point = new naver.maps.LatLng(lat, lng);
-            
-            if (startMarker) {
-                startMarker.setMap(null);
-            }
+            if (startMarker) startMarker.setMap(null);
             startMarker = new naver.maps.Marker({
                 position: point,
                 map: map,
                 icon: {
-                    content: '<div style="width:15px;height:15px;background:#00C73C;border-radius:50%;border:2px solid white;box-shadow:0 2px 4px rgba(0,0,0,0.3);"></div>',
+                    content: '<div style="width:15px;height:15px;background:#00C73C;border-radius:50%;border:2px solid white;"></div>',
                     anchor: new naver.maps.Point(9, 9)
                 },
                 zIndex: 90
             });
-            
-            console.log('🟢 Start marker added at:', lat, lng);
         }
 
-        // ============= 현재 위치 마커 업데이트 =============
         function updateCurrentMarker(lat, lng) {
-            if (typeof naver === 'undefined' || !naver.maps) return;
-            
+            if (typeof naver === 'undefined') return;
             const point = new naver.maps.LatLng(lat, lng);
             window.NaverMapBridge.userLocation = point;
             
@@ -569,161 +411,88 @@
                     position: point,
                     map: map,
                     icon: {
-                        content: '<div style="width:20px;height:20px;background:#4285F4;border-radius:50%;border:3px solid white;box-shadow:0 2px 6px rgba(0,0,0,0.3);"></div>',
+                        content: '<div style="width:20px;height:20px;background:#4285F4;border-radius:50%;border:3px solid white;"></div>',
                         anchor: new naver.maps.Point(13, 13)
                     },
                     zIndex: 100
                 });
             }
-            
-            console.log('🔵 Current marker updated at:', lat, lng);
         }
 
-        // ============= 마커만 클리어 =============
         function clearMarkers() {
-            if (startMarker) {
-                startMarker.setMap(null);
-                startMarker = null;
-            }
-            
-            if (endMarker) {
-                endMarker.setMap(null);
-                endMarker = null;
-            }
-            
-            if (userMarker) {
-                userMarker.setMap(null);
-                userMarker = null;
-            }
-            
-            console.log('All markers cleared');
+            if (startMarker) { startMarker.setMap(null); startMarker = null; }
+            if (endMarker) { endMarker.setMap(null); endMarker = null; }
+            if (userMarker) { userMarker.setMap(null); userMarker = null; }
         }
 
-        // ============= 경로 추적 함수들 =============
         function startTracking() {
-            if (typeof naver === 'undefined' || !naver.maps) return;
-            
+            if (typeof naver === 'undefined') return;
             if (!isTracking) {
                 isTracking = true;
-                
-                if (routeCoordinates.length === 0) {
-                    totalDistance = 0;
-                    console.log('🟢 Tracking started - waiting for first GPS...');
-                }
-                
+                if (routeCoordinates.length === 0) totalDistance = 0;
                 updateStatusDisplay();
                 StateManager.saveState();
-                console.log('Route tracking started' + (isFloatingMode ? ' [FLOATING]' : ''));
             }
         }
 
         function stopTracking() {
-            if (typeof naver === 'undefined' || !naver.maps) return;
-            
+            if (typeof naver === 'undefined') return;
             if (isTracking) {
                 isTracking = false;
-                
                 if (routeCoordinates.length > 0) {
-                    if (endMarker) {
-                        endMarker.setMap(null);
-                    }
-                    const lastPoint = routeCoordinates[routeCoordinates.length - 1];
+                    if (endMarker) endMarker.setMap(null);
                     endMarker = new naver.maps.Marker({
-                        position: lastPoint,
+                        position: routeCoordinates[routeCoordinates.length - 1],
                         map: map,
                         icon: {
-                            content: '<div style="width:15px;height:15px;background:#FF3E3E;border-radius:50%;border:2px solid white;box-shadow:0 2px 4px rgba(0,0,0,0.3);"></div>',
+                            content: '<div style="width:15px;height:15px;background:#FF3E3E;border-radius:50%;border:2px solid white;"></div>',
                             anchor: new naver.maps.Point(9, 9)
                         },
                         zIndex: 90
                     });
                 }
-                
                 updateStatusDisplay();
                 StateManager.saveState();
-                console.log('Route tracking stopped');
             }
         }
 
         function addRoutePoint(lat, lng) {
-            if (typeof naver === 'undefined' || !naver.maps) return;
-            
-            const point = new naver.maps.LatLng(lat, lng);
-            routeCoordinates.push(point);
-            
+            if (typeof naver === 'undefined') return;
+            routeCoordinates.push(new naver.maps.LatLng(lat, lng));
             updateRoute();
-            
             document.getElementById('pointCount').textContent = routeCoordinates.length;
-            
-            if (isFloatingMode || routeCoordinates.length % 5 === 0) {
-                StateManager.saveState();
-            }
-            
-            console.log('Point added:', lat, lng, 'Total:', routeCoordinates.length);
+            if (isFloatingMode || routeCoordinates.length % 5 === 0) StateManager.saveState();
         }
 
         function clearRoute() {
             routeCoordinates = [];
             isTracking = false;
             totalDistance = 0;
-            
-            if (routePath) {
-                routePath.setMap(null);
-                routePath = null;
-            }
-            
-            if (startMarker) {
-                startMarker.setMap(null);
-                startMarker = null;
-            }
-            
-            if (endMarker) {
-                endMarker.setMap(null);
-                endMarker = null;
-            }
-            
-            if (userMarker) {
-                userMarker.setMap(null);
-                userMarker = null;
-            }
-            
+            if (routePath) { routePath.setMap(null); routePath = null; }
+            clearMarkers();
             document.getElementById('pointCount').textContent = '0';
             document.getElementById('distance').textContent = '0';
             updateStatusDisplay();
-            
             StateManager.clearState();
-            console.log('Route cleared (including all markers)');
         }
 
-        // ============= 경로 그리기 =============
         function updateRoute() {
-            if (typeof naver === 'undefined' || !naver.maps) {
-                console.error('Naver Maps not loaded yet');
-                return;
-            }
-            
-            if (routePath) {
-                routePath.setMap(null);
-            }
+            if (typeof naver === 'undefined') return;
+            if (routePath) routePath.setMap(null);
             
             if (routeCoordinates.length > 1) {
-                var pathToRender = routeCoordinates;
-                
                 routePath = new naver.maps.Polyline({
                     map: map,
-                    path: pathToRender,
+                    path: routeCoordinates,
                     strokeColor: '#4285F4',
                     strokeOpacity: 0.8,
                     strokeWeight: isFloatingMode ? 3 : 5,
-                    strokeLineCap: 'butt',
-                    strokeLineJoin: 'miter'
+                    strokeLineCap: 'round',
+                    strokeLineJoin: 'round'
                 });
-                
-                console.log('Route updated: ' + routeCoordinates.length + ' points');
             }
         }
 
-        // ============= 유틸리티 함수들 =============
         function calculateDistance(lat1, lng1, lat2, lng2) {
             const R = 6371000;
             const dLat = (lat2 - lat1) * Math.PI / 180;
@@ -731,75 +500,19 @@
             const a = Math.sin(dLat/2) * Math.sin(dLat/2) +
                      Math.cos(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) *
                      Math.sin(dLng/2) * Math.sin(dLng/2);
-            const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
-            return R * c;
+            return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
         }
 
         function updateInfoPanel(lat, lng, accuracy) {
-            if (isFloatingMode) {
-                document.getElementById('lat').textContent = lat.toFixed(4);
-                document.getElementById('lng').textContent = lng.toFixed(4);
-                document.getElementById('pointCount').textContent = routeCoordinates.length;
-            } else {
-                document.getElementById('lat').textContent = lat.toFixed(6);
-                document.getElementById('lng').textContent = lng.toFixed(6);
-                document.getElementById('accuracy').textContent = accuracy ? accuracy.toFixed(1) + 'm' : 'N/A';
-            }
+            document.getElementById('lat').textContent = lat.toFixed(6);
+            document.getElementById('lng').textContent = lng.toFixed(6);
+            document.getElementById('accuracy').textContent = accuracy ? accuracy.toFixed(1) + 'm' : 'N/A';
         }
 
-        // ============= 스와이프 방지 =============
-        let touchStartX = 0;
-        let touchStartY = 0;
-        
-        document.addEventListener('touchstart', function(e) {
-            touchStartX = e.touches[0].clientX;
-            touchStartY = e.touches[0].clientY;
-        }, { passive: false });
-        
         document.addEventListener('touchmove', function(e) {
-            if (!e.target.closest('#map')) {
-                e.preventDefault();
-                return false;
-            }
-            
-            const deltaX = Math.abs(e.touches[0].clientX - touchStartX);
-            const deltaY = Math.abs(e.touches[0].clientY - touchStartY);
-            
-            if (isFloatingMode) {
-                e.preventDefault();
-                return false;
-            }
-            
-            if (deltaX > deltaY && deltaX > 50) {
-                e.preventDefault();
-                e.stopPropagation();
-                return false;
-            }
+            if (!e.target.closest('#map')) e.preventDefault();
         }, { passive: false });
-        
-        window.history.pushState(null, null, window.location.href);
-        window.onpopstate = function() {
-            window.history.go(1);
-        };
 
-        // ============= 페이지 이벤트 =============
-        document.addEventListener('visibilitychange', function() {
-            if (document.hidden) {
-                StateManager.saveState();
-                console.log('Page hidden - state saved');
-            } else {
-                const state = StateManager.restoreState();
-                if (state) {
-                    console.log('Page visible - state restored');
-                }
-            }
-        });
-
-        window.addEventListener('beforeunload', function() {
-            StateManager.saveState();
-        });
-
-        // ============= 전역 함수 등록 (Unity용) =============
         window.startRoute = startTracking;
         window.stopRoute = stopTracking;
         window.clearRoute = clearRoute;
@@ -807,13 +520,9 @@
         window.clearMarkers = clearMarkers;
         window.addStartMarker = addStartMarkerAt;
         window.updateCurrentLocation = updateCurrentMarker;
-        
+
         window.restoreRoute = function(pointsJson) {
-            if (typeof naver === 'undefined' || !naver.maps) {
-                console.error('Naver Maps not loaded yet');
-                return;
-            }
-            
+            if (typeof naver === 'undefined' || !naver.maps) return;
             try {
                 const points = typeof pointsJson === 'string' ? JSON.parse(pointsJson) : pointsJson;
                 routeCoordinates = [];
@@ -822,13 +531,9 @@
                 points.forEach((p, index) => {
                     const point = new naver.maps.LatLng(p.lat, p.lng);
                     routeCoordinates.push(point);
-                    
                     if (index > 0) {
                         const prevPoint = routeCoordinates[index - 1];
-                        totalDistance += calculateDistance(
-                            prevPoint.lat(), prevPoint.lng(),
-                            point.lat(), point.lng()
-                        );
+                        totalDistance += calculateDistance(prevPoint.lat(), prevPoint.lng(), point.lat(), point.lng());
                     }
                 });
                 
@@ -839,36 +544,17 @@
                     startMarker = new naver.maps.Marker({
                         position: routeCoordinates[0],
                         map: map,
-                        icon: {
-                            content: '<div style="width:15px;height:15px;background:#00C73C;border-radius:50%;border:2px solid white;"></div>',
-                            anchor: new naver.maps.Point(9, 9)
-                        }
+                        icon: { content: '<div style="width:15px;height:15px;background:#00C73C;border-radius:50%;border:2px solid white;"></div>', anchor: new naver.maps.Point(9, 9) }
                     });
-                    
-                    if (!isTracking && routeCoordinates.length > 1) {
-                        if (endMarker) endMarker.setMap(null);
-                        endMarker = new naver.maps.Marker({
-                            position: routeCoordinates[routeCoordinates.length - 1],
-                            map: map,
-                            icon: {
-                                content: '<div style="width:15px;height:15px;background:#FF3E3E;border-radius:50%;border:2px solid white;"></div>',
-                                anchor: new naver.maps.Point(9, 9)
-                            }
-                        });
-                    }
                 }
                 
                 document.getElementById('pointCount').textContent = routeCoordinates.length;
                 document.getElementById('distance').textContent = Math.round(totalDistance);
-                
                 StateManager.saveState();
-                console.log('Restored', routeCoordinates.length, 'points');
-            } catch (e) {
-                console.error('Failed to restore route:', e);
-            }
+            } catch (e) { console.error('Failed to restore route:', e); }
         };
 
-        // ============= ⭐⭐⭐ 전체 경로 캡처 시스템 ⭐⭐⭐ =============
+        // ============= ⭐⭐⭐ 전체 경로 캡처 시스템 (수정됨!) ⭐⭐⭐ =============
         
         let captureState = {
             isCapturing: false,
@@ -876,12 +562,65 @@
             currentTileIndex: 0,
             originalCenter: null,
             originalZoom: null,
-            captureZoom: 16,
-            tileOverlap: 0.1,
+            captureZoom: 14,
             cols: 0,
             rows: 0
         };
 
+        // ⭐ info-panel 및 UI 숨기기
+        function hideCaptureUI() {
+            console.log('Hiding UI for capture...');
+            var panel = document.getElementById('info-panel');
+            if (panel) {
+                panel.classList.add('capture-hidden');
+            }
+            document.body.classList.add('capture-mode');
+            
+            // 네이버 지도 컨트롤 숨기기
+            var controls = document.querySelectorAll('[class*="btn_"], [class*="zoom"], .naver-map-control');
+            controls.forEach(function(el) {
+                el.style.setProperty('display', 'none', 'important');
+                el.style.setProperty('visibility', 'hidden', 'important');
+            });
+        }
+        
+        function showCaptureUI() {
+            console.log('Showing UI after capture...');
+            var panel = document.getElementById('info-panel');
+            if (panel) {
+                panel.classList.remove('capture-hidden');
+            }
+            document.body.classList.remove('capture-mode');
+            
+            var controls = document.querySelectorAll('[class*="btn_"], [class*="zoom"], .naver-map-control');
+            controls.forEach(function(el) {
+                el.style.removeProperty('display');
+                el.style.removeProperty('visibility');
+            });
+        }
+
+        // ⭐ 경로에 맞는 최적 줌 레벨 계산 (3x3에 맞게!)
+        function calculateOptimalZoom(bounds) {
+            var sw = bounds.getSW();
+            var ne = bounds.getNE();
+            
+            var latRange = ne.lat() - sw.lat();
+            var lngRange = ne.lng() - sw.lng();
+            var maxRange = Math.max(latRange, lngRange);
+            
+            console.log('Route range - lat:', latRange.toFixed(6), 'lng:', lngRange.toFixed(6), 'max:', maxRange.toFixed(6));
+            
+            // 3x3 타일 (실제로는 1~3타일)에 경로가 들어가도록 줌 결정
+            // 줌이 낮을수록 더 넓은 영역
+            if (maxRange > 0.12) return 11;      // 매우 넓음 (~13km+)
+            if (maxRange > 0.06) return 12;      // 넓음 (~6km+)
+            if (maxRange > 0.03) return 13;      // 중간 (~3km+)
+            if (maxRange > 0.015) return 14;     // 좁음 (~1.5km+)
+            if (maxRange > 0.008) return 15;     // 매우 좁음 (~800m+)
+            return 16;                           // 아주 짧은 경로
+        }
+
+        // ⭐ 캡처 시작
         window.NaverMapBridge.startFullRouteCapture = function(zoom) {
             if (captureState.isCapturing) {
                 console.log('Already capturing...');
@@ -894,14 +633,28 @@
                 return;
             }
             
-            console.log('🎬 Starting full route capture...');
+            console.log('========== STARTING CAPTURE ==========');
             captureState.isCapturing = true;
-            captureState.captureZoom = zoom || 16;
             
+            // 원본 상태 저장
             captureState.originalCenter = map.getCenter();
             captureState.originalZoom = map.getZoom();
             
-            calculateCaptureTiles();
+            // ⭐ UI 숨기기!
+            hideCaptureUI();
+            
+            // 경로 범위 계산
+            var bounds = new naver.maps.LatLngBounds();
+            routeCoordinates.forEach(function(coord) {
+                bounds.extend(coord);
+            });
+            
+            // ⭐ 최적 줌 레벨 자동 계산
+            captureState.captureZoom = zoom || calculateOptimalZoom(bounds);
+            console.log('Auto calculated zoom:', captureState.captureZoom);
+            
+            // ⭐ 타일 계산 (최대 3x3!)
+            calculateCaptureTiles(bounds);
             
             captureState.currentTileIndex = 0;
             
@@ -912,87 +665,99 @@
                 rows: captureState.rows
             };
             
-            console.log('Capture info:', info);
+            console.log('Capture info:', JSON.stringify(info));
             window.Unity.call('N/CAPTURE_START:' + JSON.stringify(info));
             
-            moveToNextTile();
+            // 첫 타일로 이동
+            setTimeout(function() {
+                moveToNextTile();
+            }, 500);
         };
 
-        function calculateCaptureTiles() {
-            var bounds = new naver.maps.LatLngBounds();
-            routeCoordinates.forEach(function(coord) {
-                bounds.extend(coord);
-            });
-            
+        // ⭐ 타일 계산 (최대 3x3, 위→아래, 왼쪽→오른쪽 순서)
+        function calculateCaptureTiles(bounds) {
             var sw = bounds.getSW();
             var ne = bounds.getNE();
             
-            console.log('Route bounds:', sw.lat(), sw.lng(), 'to', ne.lat(), ne.lng());
+            // 여유 공간 추가 (20%)
+            var latPadding = (ne.lat() - sw.lat()) * 0.2;
+            var lngPadding = (ne.lng() - sw.lng()) * 0.2;
             
+            var minLat = sw.lat() - latPadding;
+            var maxLat = ne.lat() + latPadding;
+            var minLng = sw.lng() - lngPadding;
+            var maxLng = ne.lng() + lngPadding;
+            
+            var centerLat = (minLat + maxLat) / 2;
+            var centerLng = (minLng + maxLng) / 2;
+            
+            console.log('Route center:', centerLat.toFixed(6), centerLng.toFixed(6));
+            
+            // 화면당 범위 계산
             var metersPerPixel = getMetersPerPixelAtZoom(captureState.captureZoom);
             var screenWidthMeters = metersPerPixel * window.innerWidth;
             var screenHeightMeters = metersPerPixel * window.innerHeight;
             
-            var effectiveWidth = screenWidthMeters * (1 - captureState.tileOverlap);
-            var effectiveHeight = screenHeightMeters * (1 - captureState.tileOverlap);
+            // 위도/경도 범위로 변환
+            var latPerTile = screenHeightMeters / 111000;
+            var lngPerTile = screenWidthMeters / (111000 * Math.cos(centerLat * Math.PI / 180));
             
-            var latPerTile = effectiveHeight / 111000;
-            var lngPerTile = effectiveWidth / (111000 * Math.cos(((sw.lat() + ne.lat()) / 2) * Math.PI / 180));
+            var latRange = maxLat - minLat;
+            var lngRange = maxLng - minLng;
             
-            var latRange = ne.lat() - sw.lat();
-            var lngRange = ne.lng() - sw.lng();
+            // ⭐ 타일 수 계산 (최대 3x3!)
+            var cols = Math.ceil(lngRange / lngPerTile);
+            var rows = Math.ceil(latRange / latPerTile);
             
-            var marginLat = latPerTile * 0.3;
-            var marginLng = lngPerTile * 0.3;
-            
-            var cols = Math.ceil((lngRange + marginLng * 2) / lngPerTile);
-            var rows = Math.ceil((latRange + marginLat * 2) / latPerTile);
-            
-            cols = Math.max(1, Math.min(cols, 5));
-            rows = Math.max(1, Math.min(rows, 5));
+            cols = Math.max(1, Math.min(cols, 3));  // 최소 1, 최대 3
+            rows = Math.max(1, Math.min(rows, 3));
             
             captureState.cols = cols;
             captureState.rows = rows;
             
-            console.log('Grid:', cols, 'x', rows, '=', cols * rows, 'tiles');
+            console.log('Grid size:', cols, 'x', rows, '=', cols * rows, 'tiles (max 3x3)');
             
+            // 타일 생성
             captureState.tiles = [];
             
-            var startLat = sw.lat() - marginLat + (latPerTile / 2);
-            var startLng = sw.lng() - marginLng + (lngPerTile / 2);
+            // 전체 그리드 크기
+            var totalWidth = cols * lngPerTile;
+            var totalHeight = rows * latPerTile;
             
+            // 시작점 (왼쪽 위)
+            var startLng = centerLng - (totalWidth / 2) + (lngPerTile / 2);
+            var startLat = centerLat + (totalHeight / 2) - (latPerTile / 2);  // 위에서 시작
+            
+            console.log('Tile size (deg): lat=' + latPerTile.toFixed(6) + ', lng=' + lngPerTile.toFixed(6));
+            console.log('Start position: lat=' + startLat.toFixed(6) + ', lng=' + startLng.toFixed(6));
+            
+            // ⭐ 위→아래, 왼쪽→오른쪽 순서로 타일 생성
             var index = 0;
             for (var row = 0; row < rows; row++) {
                 for (var col = 0; col < cols; col++) {
-                    var tileLat = startLat + (row * latPerTile);
-                    var tileLng = startLng + (col * lngPerTile);
+                    var tileLat = startLat - (row * latPerTile);  // 위에서 아래로
+                    var tileLng = startLng + (col * lngPerTile);  // 왼쪽에서 오른쪽으로
                     
                     captureState.tiles.push({
                         lat: tileLat,
                         lng: tileLng,
                         row: row,
                         col: col,
-                        index: index++
+                        index: index
                     });
+                    
+                    console.log('Tile[' + index + ']: row=' + row + ', col=' + col + 
+                               ' @ (' + tileLat.toFixed(6) + ', ' + tileLng.toFixed(6) + ')');
+                    index++;
                 }
             }
             
-            console.log('Tiles calculated:', captureState.tiles.length);
+            console.log('Total tiles:', captureState.tiles.length);
         }
 
         function getMetersPerPixelAtZoom(zoom) {
-            var metersPerPixel = {
-                10: 76,
-                11: 38,
-                12: 19,
-                13: 9.5,
-                14: 4.8,
-                15: 2.4,
-                16: 1.2,
-                17: 0.6,
-                18: 0.3
-            };
-            return metersPerPixel[zoom] || 2.4;
+            var mpp = { 10: 76, 11: 38, 12: 19, 13: 9.5, 14: 4.8, 15: 2.4, 16: 1.2, 17: 0.6, 18: 0.3 };
+            return mpp[zoom] || 2.4;
         }
 
         function moveToNextTile() {
@@ -1002,14 +767,19 @@
             }
             
             var tile = captureState.tiles[captureState.currentTileIndex];
-            console.log('Moving to tile', tile.index + 1, '/', captureState.tiles.length);
+            console.log('>>> Moving to tile ' + (tile.index + 1) + '/' + captureState.tiles.length + 
+                       ' (row=' + tile.row + ', col=' + tile.col + ')');
             
+            // 줌 먼저 설정
             map.setZoom(captureState.captureZoom);
+            
+            // 위치 이동
             map.setCenter(new naver.maps.LatLng(tile.lat, tile.lng));
             
+            // ⭐ 지도 타일 로딩 대기 (1.5초)
             setTimeout(function() {
                 requestTileCapture(tile);
-            }, 1200);
+            }, 1500);
         }
 
         function requestTileCapture(tile) {
@@ -1019,32 +789,40 @@
                 col: tile.col,
                 total: captureState.tiles.length
             };
-            
-            console.log('Requesting capture for tile:', data);
+            console.log('Requesting capture:', JSON.stringify(data));
             window.Unity.call('N/CAPTURE_TILE:' + JSON.stringify(data));
         }
 
+        // ⭐ Unity에서 타일 캡처 완료 후 호출
         window.NaverMapBridge.onTileCaptured = function(tileIndex) {
-            console.log('Tile captured:', tileIndex);
+            console.log('<<< Tile captured: ' + tileIndex);
             
             captureState.currentTileIndex++;
             
             var progress = Math.round((captureState.currentTileIndex / captureState.tiles.length) * 100);
             window.Unity.call('N/CAPTURE_PROGRESS:' + progress);
             
-            moveToNextTile();
+            // 다음 타일로 (짧은 대기)
+            setTimeout(function() {
+                moveToNextTile();
+            }, 300);
         };
 
         function finishCapture() {
-            console.log('🎬 All tiles captured!');
+            console.log('========== CAPTURE COMPLETE ==========');
             
+            // 원래 상태로 복원
             if (captureState.originalCenter && captureState.originalZoom) {
                 map.setCenter(captureState.originalCenter);
                 map.setZoom(captureState.originalZoom);
             }
             
+            // ⭐ UI 다시 보이기
+            showCaptureUI();
+            
             captureState.isCapturing = false;
             
+            // Unity에 완료 알림 (rows, cols 정보 포함)
             window.Unity.call('N/CAPTURE_COMPLETE:' + JSON.stringify({
                 cols: captureState.cols,
                 rows: captureState.rows,
@@ -1054,6 +832,7 @@
 
         window.NaverMapBridge.cancelCapture = function() {
             if (captureState.isCapturing) {
+                console.log('Capture cancelled');
                 captureState.isCapturing = false;
                 
                 if (captureState.originalCenter && captureState.originalZoom) {
@@ -1061,19 +840,18 @@
                     map.setZoom(captureState.originalZoom);
                 }
                 
-                console.log('Capture cancelled');
+                showCaptureUI();
+                window.Unity.call('N/CAPTURE_CANCELLED');
             }
         };
 
-        // ============= 초기화 실행 =============
+        // ============= 초기화 =============
         window.onload = function() {
             if (typeof naver !== 'undefined' && naver.maps) {
                 initMap();
             } else {
-                console.log('Waiting for Naver Maps API...');
                 setTimeout(initMap, 500);
             }
-            console.log('Map initialization started' + (isFloatingMode ? ' [FLOATING MODE]' : ' [NORMAL MODE]'));
         };
     </script>
 </body>
