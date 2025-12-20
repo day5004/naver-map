@@ -558,11 +558,33 @@
             var panel = document.getElementById('info-panel');
             if (panel) panel.classList.add('capture-hidden');
             
-            // 줌 컨트롤 숨기기
-            var zoomControls = document.querySelectorAll('[class*="btn_zoom"], [class*="zoom"], .naver-map-control');
-            zoomControls.forEach(function(el) {
-                el.style.setProperty('display', 'none', 'important');
+            // ⭐ 네이버 지도 줌 컨트롤 완전히 숨기기
+            var selectors = [
+                '[class*="btn_zoom"]',
+                '[class*="zoom"]', 
+                '.naver-map-control',
+                '[class*="map_btn"]',
+                '[class*="btn_"]',
+                '[class*="ctrl"]',
+                '[class*="control"]'
+            ];
+            
+            selectors.forEach(function(selector) {
+                var elements = document.querySelectorAll(selector);
+                elements.forEach(function(el) {
+                    el.style.setProperty('display', 'none', 'important');
+                    el.style.setProperty('visibility', 'hidden', 'important');
+                    el.style.setProperty('opacity', '0', 'important');
+                });
             });
+            
+            // 지도 컨트롤 비활성화
+            if (map) {
+                map.setOptions({
+                    zoomControl: false,
+                    scaleControl: false
+                });
+            }
         }
         
         function showCaptureUI() {
@@ -570,10 +592,32 @@
             var panel = document.getElementById('info-panel');
             if (panel) panel.classList.remove('capture-hidden');
             
-            var zoomControls = document.querySelectorAll('[class*="btn_zoom"], [class*="zoom"], .naver-map-control');
-            zoomControls.forEach(function(el) {
-                el.style.removeProperty('display');
+            // ⭐ 줌 컨트롤 복원
+            var selectors = [
+                '[class*="btn_zoom"]',
+                '[class*="zoom"]', 
+                '.naver-map-control',
+                '[class*="map_btn"]',
+                '[class*="btn_"]',
+                '[class*="ctrl"]',
+                '[class*="control"]'
+            ];
+            
+            selectors.forEach(function(selector) {
+                var elements = document.querySelectorAll(selector);
+                elements.forEach(function(el) {
+                    el.style.removeProperty('display');
+                    el.style.removeProperty('visibility');
+                    el.style.removeProperty('opacity');
+                });
             });
+            
+            // 지도 컨트롤 다시 활성화 (플로팅 모드 아닐 때만)
+            if (map && !isFloatingMode) {
+                map.setOptions({
+                    zoomControl: true
+                });
+            }
         }
 
         // ⭐⭐⭐ 단일 캡처 (타일 없이 한 장!) ⭐⭐⭐
