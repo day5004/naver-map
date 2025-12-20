@@ -606,13 +606,13 @@
                 bounds.extend(coord);
             });
             
-            // ⭐ 경로 전체가 화면에 들어오도록 fitBounds
-            // 여백을 줘서 경로가 화면 가장자리에 딱 붙지 않게
+            // ⭐ 경로 전체가 화면에 꽉 차게 fitBounds
+            // 여백 최소화로 경로가 크게 보이게
             map.fitBounds(bounds, {
-                top: 100,
-                right: 100,
-                bottom: 100,
-                left: 100
+                top: 30,
+                right: 30,
+                bottom: 30,
+                left: 30
             });
             
             console.log('Map fitted to route bounds');
