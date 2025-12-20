@@ -39,7 +39,6 @@
             transition: opacity 0.3s, visibility 0.3s;
         }
         
-        /* ⭐ 캡처 모드에서 완전히 숨기기 */
         .info-panel.capture-hidden {
             opacity: 0 !important;
             visibility: hidden !important;
@@ -88,20 +87,11 @@
         .floating-mode .info-row.distance {
             display: none;
         }
-        
-        /* ⭐ 캡처 모드에서 지도 컨트롤도 숨기기 */
-        .capture-mode .naver-map-control,
-        .capture-mode [class*="btn_"],
-        .capture-mode [class*="zoom"] {
-            display: none !important;
-            visibility: hidden !important;
-        }
     </style>
 </head>
 <body>
     <div id="map"></div>
     
-    <!-- ⭐ id 추가! -->
     <div class="info-panel" id="info-panel">
         <div class="info-row">
             <label>위도:</label>
@@ -304,7 +294,7 @@
                 zoom: savedState ? savedState.zoom : 16,
                 mapTypeControl: false,
                 scaleControl: false,
-                logoControl: false,
+                logoControl: true,
                 mapDataControl: false,
                 zoomControl: !isFloatingMode,
                 zoomControlOptions: { position: naver.maps.Position.TOP_RIGHT },
@@ -485,8 +475,8 @@
                     map: map,
                     path: routeCoordinates,
                     strokeColor: '#4285F4',
-                    strokeOpacity: 0.8,
-                    strokeWeight: isFloatingMode ? 3 : 5,
+                    strokeOpacity: 0.9,
+                    strokeWeight: 6,
                     strokeLineCap: 'round',
                     strokeLineJoin: 'round'
                 });
@@ -554,73 +544,39 @@
             } catch (e) { console.error('Failed to restore route:', e); }
         };
 
-        // ============= ⭐⭐⭐ 전체 경로 캡처 시스템 (수정됨!) ⭐⭐⭐ =============
+        // ============= ⭐⭐⭐ 단일 캡처 시스템 (타일 없음!) ⭐⭐⭐ =============
         
         let captureState = {
             isCapturing: false,
-            tiles: [],
-            currentTileIndex: 0,
             originalCenter: null,
-            originalZoom: null,
-            captureZoom: 14,
-            cols: 0,
-            rows: 0
+            originalZoom: null
         };
 
-        // ⭐ info-panel 및 UI 숨기기
+        // UI 숨기기
         function hideCaptureUI() {
             console.log('Hiding UI for capture...');
             var panel = document.getElementById('info-panel');
-            if (panel) {
-                panel.classList.add('capture-hidden');
-            }
-            document.body.classList.add('capture-mode');
+            if (panel) panel.classList.add('capture-hidden');
             
-            // 네이버 지도 컨트롤 숨기기
-            var controls = document.querySelectorAll('[class*="btn_"], [class*="zoom"], .naver-map-control');
-            controls.forEach(function(el) {
+            // 줌 컨트롤 숨기기
+            var zoomControls = document.querySelectorAll('[class*="btn_zoom"], [class*="zoom"], .naver-map-control');
+            zoomControls.forEach(function(el) {
                 el.style.setProperty('display', 'none', 'important');
-                el.style.setProperty('visibility', 'hidden', 'important');
             });
         }
         
         function showCaptureUI() {
             console.log('Showing UI after capture...');
             var panel = document.getElementById('info-panel');
-            if (panel) {
-                panel.classList.remove('capture-hidden');
-            }
-            document.body.classList.remove('capture-mode');
+            if (panel) panel.classList.remove('capture-hidden');
             
-            var controls = document.querySelectorAll('[class*="btn_"], [class*="zoom"], .naver-map-control');
-            controls.forEach(function(el) {
+            var zoomControls = document.querySelectorAll('[class*="btn_zoom"], [class*="zoom"], .naver-map-control');
+            zoomControls.forEach(function(el) {
                 el.style.removeProperty('display');
-                el.style.removeProperty('visibility');
             });
         }
 
-        // ⭐ 경로에 맞는 최적 줌 레벨 계산 (3x3에 맞게!)
-        function calculateOptimalZoom(bounds) {
-            var sw = bounds.getSW();
-            var ne = bounds.getNE();
-            
-            var latRange = ne.lat() - sw.lat();
-            var lngRange = ne.lng() - sw.lng();
-            var maxRange = Math.max(latRange, lngRange);
-            
-            console.log('Route range - lat:', latRange.toFixed(6), 'lng:', lngRange.toFixed(6), 'max:', maxRange.toFixed(6));
-            
-            // 3x3 타일 (실제로는 1~3타일)에 경로가 들어가도록 줌 결정
-            // 줌이 낮을수록 더 넓은 영역
-            if (maxRange > 0.12) return 11;      // 매우 넓음 (~13km+)
-            if (maxRange > 0.06) return 12;      // 넓음 (~6km+)
-            if (maxRange > 0.03) return 13;      // 중간 (~3km+)
-            if (maxRange > 0.015) return 14;     // 좁음 (~1.5km+)
-            if (maxRange > 0.008) return 15;     // 매우 좁음 (~800m+)
-            return 16;                           // 아주 짧은 경로
-        }
-
-        // ⭐ 캡처 시작
+        // ⭐⭐⭐ 단일 캡처 (타일 없이 한 장!) ⭐⭐⭐
         window.NaverMapBridge.startFullRouteCapture = function(zoom) {
             if (captureState.isCapturing) {
                 console.log('Already capturing...');
@@ -633,14 +589,15 @@
                 return;
             }
             
-            console.log('========== STARTING CAPTURE ==========');
+            console.log('========== STARTING SINGLE CAPTURE ==========');
+            console.log('Route points:', routeCoordinates.length);
             captureState.isCapturing = true;
             
             // 원본 상태 저장
             captureState.originalCenter = map.getCenter();
             captureState.originalZoom = map.getZoom();
             
-            // ⭐ UI 숨기기!
+            // UI 숨기기
             hideCaptureUI();
             
             // 경로 범위 계산
@@ -649,162 +606,56 @@
                 bounds.extend(coord);
             });
             
-            // ⭐ 최적 줌 레벨 자동 계산
-            captureState.captureZoom = zoom || calculateOptimalZoom(bounds);
-            console.log('Auto calculated zoom:', captureState.captureZoom);
+            // ⭐ 경로 전체가 화면에 들어오도록 fitBounds
+            // 여백을 줘서 경로가 화면 가장자리에 딱 붙지 않게
+            map.fitBounds(bounds, {
+                top: 100,
+                right: 100,
+                bottom: 100,
+                left: 100
+            });
             
-            // ⭐ 타일 계산 (최대 3x3!)
-            calculateCaptureTiles(bounds);
+            console.log('Map fitted to route bounds');
+            console.log('Current zoom after fitBounds:', map.getZoom());
             
-            captureState.currentTileIndex = 0;
-            
-            var info = {
-                totalTiles: captureState.tiles.length,
-                zoom: captureState.captureZoom,
-                cols: captureState.cols,
-                rows: captureState.rows
-            };
-            
-            console.log('Capture info:', JSON.stringify(info));
-            window.Unity.call('N/CAPTURE_START:' + JSON.stringify(info));
-            
-            // 첫 타일로 이동
+            // 지도 렌더링 대기 후 캡처
             setTimeout(function() {
-                moveToNextTile();
+                // Unity에 1x1 타일로 알림
+                var info = {
+                    totalTiles: 1,
+                    zoom: map.getZoom(),
+                    cols: 1,
+                    rows: 1
+                };
+                
+                console.log('Capture info:', JSON.stringify(info));
+                window.Unity.call('N/CAPTURE_START:' + JSON.stringify(info));
+                
+                // 바로 타일 캡처 요청 (1개뿐이므로)
+                setTimeout(function() {
+                    var tileData = {
+                        index: 0,
+                        row: 0,
+                        col: 0,
+                        total: 1
+                    };
+                    console.log('Requesting single capture');
+                    window.Unity.call('N/CAPTURE_TILE:' + JSON.stringify(tileData));
+                }, 2000);  // 지도 타일 로딩 대기 (2초)
+                
             }, 500);
         };
 
-        // ⭐ 타일 계산 (최대 3x3, 위→아래, 왼쪽→오른쪽 순서)
-        function calculateCaptureTiles(bounds) {
-            var sw = bounds.getSW();
-            var ne = bounds.getNE();
-            
-            // 여유 공간 추가 (20%)
-            var latPadding = (ne.lat() - sw.lat()) * 0.2;
-            var lngPadding = (ne.lng() - sw.lng()) * 0.2;
-            
-            var minLat = sw.lat() - latPadding;
-            var maxLat = ne.lat() + latPadding;
-            var minLng = sw.lng() - lngPadding;
-            var maxLng = ne.lng() + lngPadding;
-            
-            var centerLat = (minLat + maxLat) / 2;
-            var centerLng = (minLng + maxLng) / 2;
-            
-            console.log('Route center:', centerLat.toFixed(6), centerLng.toFixed(6));
-            
-            // 화면당 범위 계산
-            var metersPerPixel = getMetersPerPixelAtZoom(captureState.captureZoom);
-            var screenWidthMeters = metersPerPixel * window.innerWidth;
-            var screenHeightMeters = metersPerPixel * window.innerHeight;
-            
-            // 위도/경도 범위로 변환
-            var latPerTile = screenHeightMeters / 111000;
-            var lngPerTile = screenWidthMeters / (111000 * Math.cos(centerLat * Math.PI / 180));
-            
-            var latRange = maxLat - minLat;
-            var lngRange = maxLng - minLng;
-            
-            // ⭐ 타일 수 계산 (최대 3x3!)
-            var cols = Math.ceil(lngRange / lngPerTile);
-            var rows = Math.ceil(latRange / latPerTile);
-            
-            cols = Math.max(1, Math.min(cols, 3));  // 최소 1, 최대 3
-            rows = Math.max(1, Math.min(rows, 3));
-            
-            captureState.cols = cols;
-            captureState.rows = rows;
-            
-            console.log('Grid size:', cols, 'x', rows, '=', cols * rows, 'tiles (max 3x3)');
-            
-            // 타일 생성
-            captureState.tiles = [];
-            
-            // 전체 그리드 크기
-            var totalWidth = cols * lngPerTile;
-            var totalHeight = rows * latPerTile;
-            
-            // 시작점 (왼쪽 위)
-            var startLng = centerLng - (totalWidth / 2) + (lngPerTile / 2);
-            var startLat = centerLat + (totalHeight / 2) - (latPerTile / 2);  // 위에서 시작
-            
-            console.log('Tile size (deg): lat=' + latPerTile.toFixed(6) + ', lng=' + lngPerTile.toFixed(6));
-            console.log('Start position: lat=' + startLat.toFixed(6) + ', lng=' + startLng.toFixed(6));
-            
-            // ⭐ 위→아래, 왼쪽→오른쪽 순서로 타일 생성
-            var index = 0;
-            for (var row = 0; row < rows; row++) {
-                for (var col = 0; col < cols; col++) {
-                    var tileLat = startLat - (row * latPerTile);  // 위에서 아래로
-                    var tileLng = startLng + (col * lngPerTile);  // 왼쪽에서 오른쪽으로
-                    
-                    captureState.tiles.push({
-                        lat: tileLat,
-                        lng: tileLng,
-                        row: row,
-                        col: col,
-                        index: index
-                    });
-                    
-                    console.log('Tile[' + index + ']: row=' + row + ', col=' + col + 
-                               ' @ (' + tileLat.toFixed(6) + ', ' + tileLng.toFixed(6) + ')');
-                    index++;
-                }
-            }
-            
-            console.log('Total tiles:', captureState.tiles.length);
-        }
-
-        function getMetersPerPixelAtZoom(zoom) {
-            var mpp = { 10: 76, 11: 38, 12: 19, 13: 9.5, 14: 4.8, 15: 2.4, 16: 1.2, 17: 0.6, 18: 0.3 };
-            return mpp[zoom] || 2.4;
-        }
-
-        function moveToNextTile() {
-            if (captureState.currentTileIndex >= captureState.tiles.length) {
-                finishCapture();
-                return;
-            }
-            
-            var tile = captureState.tiles[captureState.currentTileIndex];
-            console.log('>>> Moving to tile ' + (tile.index + 1) + '/' + captureState.tiles.length + 
-                       ' (row=' + tile.row + ', col=' + tile.col + ')');
-            
-            // 줌 먼저 설정
-            map.setZoom(captureState.captureZoom);
-            
-            // 위치 이동
-            map.setCenter(new naver.maps.LatLng(tile.lat, tile.lng));
-            
-            // ⭐ 지도 타일 로딩 대기 (1.5초)
-            setTimeout(function() {
-                requestTileCapture(tile);
-            }, 1500);
-        }
-
-        function requestTileCapture(tile) {
-            var data = {
-                index: tile.index,
-                row: tile.row,
-                col: tile.col,
-                total: captureState.tiles.length
-            };
-            console.log('Requesting capture:', JSON.stringify(data));
-            window.Unity.call('N/CAPTURE_TILE:' + JSON.stringify(data));
-        }
-
-        // ⭐ Unity에서 타일 캡처 완료 후 호출
+        // 캡처 완료 후 호출
         window.NaverMapBridge.onTileCaptured = function(tileIndex) {
-            console.log('<<< Tile captured: ' + tileIndex);
+            console.log('Single tile captured!');
             
-            captureState.currentTileIndex++;
+            // 완료 알림
+            window.Unity.call('N/CAPTURE_PROGRESS:100');
             
-            var progress = Math.round((captureState.currentTileIndex / captureState.tiles.length) * 100);
-            window.Unity.call('N/CAPTURE_PROGRESS:' + progress);
-            
-            // 다음 타일로 (짧은 대기)
+            // 캡처 완료
             setTimeout(function() {
-                moveToNextTile();
+                finishCapture();
             }, 300);
         };
 
@@ -817,16 +668,16 @@
                 map.setZoom(captureState.originalZoom);
             }
             
-            // ⭐ UI 다시 보이기
+            // UI 복원
             showCaptureUI();
             
             captureState.isCapturing = false;
             
-            // Unity에 완료 알림 (rows, cols 정보 포함)
+            // Unity에 완료 알림
             window.Unity.call('N/CAPTURE_COMPLETE:' + JSON.stringify({
-                cols: captureState.cols,
-                rows: captureState.rows,
-                total: captureState.tiles.length
+                cols: 1,
+                rows: 1,
+                total: 1
             }));
         }
 
@@ -845,7 +696,7 @@
             }
         };
 
-        // ============= 초기화 =============
+        // 초기화
         window.onload = function() {
             if (typeof naver !== 'undefined' && naver.maps) {
                 initMap();
