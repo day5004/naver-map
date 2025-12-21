@@ -236,7 +236,8 @@
                         const lastPoint = routeCoordinates[routeCoordinates.length - 1];
                         const distance = calculateDistance(lastPoint.lat(), lastPoint.lng(), lat, lng);
                         const minDistance = isFloatingMode ? 2 : 3;
-                        if (distance > minDistance && distance < 100) {
+                        // ⭐ 500m까지 허용 (장거리 이동 지원)
+                        if (distance > minDistance && distance < 500) {
                             addRoutePoint(lat, lng);
                             totalDistance += distance;
                             document.getElementById('distance').textContent = Math.round(totalDistance);
