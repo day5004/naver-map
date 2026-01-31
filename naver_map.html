@@ -186,6 +186,245 @@
             isTrackingFromUnity: false,
             map: null,
             
+            // ==================== 식물 마커 시스템 ====================
+            
+            // 식물 마커 저장용
+            plantMarkers: {},
+            
+            // 식물 정보창
+            plantInfoWindow: null,
+            
+            // 식물 아이콘 이미지 (SVG)
+            plantIcons: {
+                seed: 'data:image/svg+xml;charset=UTF-8,' + encodeURIComponent(
+                    '<svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 32 32">' +
+                    '<circle cx="16" cy="16" r="14" fill="#8B4513" stroke="#5D3A1A" stroke-width="2"/>' +
+                    '<text x="16" y="22" text-anchor="middle" font-size="16">🌱</text>' +
+                    '</svg>'
+                ),
+                sprout: 'data:image/svg+xml;charset=UTF-8,' + encodeURIComponent(
+                    '<svg xmlns="http://www.w3.org/2000/svg" width="36" height="36" viewBox="0 0 36 36">' +
+                    '<circle cx="18" cy="18" r="16" fill="#228B22" stroke="#1B5E20" stroke-width="2"/>' +
+                    '<text x="18" y="25" text-anchor="middle" font-size="20">🌿</text>' +
+                    '</svg>'
+                ),
+                tree: 'data:image/svg+xml;charset=UTF-8,' + encodeURIComponent(
+                    '<svg xmlns="http://www.w3.org/2000/svg" width="44" height="44" viewBox="0 0 44 44">' +
+                    '<circle cx="22" cy="22" r="20" fill="#006400" stroke="#004D00" stroke-width="2"/>' +
+                    '<text x="22" y="30" text-anchor="middle" font-size="24">🌳</text>' +
+                    '</svg>'
+                )
+            },
+            
+            /**
+             * 식물 마커 추가
+             * @param {string} id - 식물 고유 ID
+             * @param {number} lat - 위도
+             * @param {number} lng - 경도
+             * @param {string} icon - 아이콘 타입 (seed, sprout, tree)
+             * @param {number} visitCount - 방문 횟수
+             */
+            addPlantMarker: function(id, lat, lng, icon, visitCount) {
+                if (!this.map) {
+                    console.error('[NaverMapBridge] Map not initialized');
+                    return;
+                }
+                
+                // 기존 마커가 있으면 제거
+                if (this.plantMarkers[id]) {
+                    this.plantMarkers[id].setMap(null);
+                }
+                
+                // 아이콘 크기 (성장 단계별)
+                var iconSize;
+                switch(icon) {
+                    case 'seed': iconSize = new naver.maps.Size(32, 32); break;
+                    case 'sprout': iconSize = new naver.maps.Size(36, 36); break;
+                    case 'tree': iconSize = new naver.maps.Size(44, 44); break;
+                    default: iconSize = new naver.maps.Size(32, 32);
+                }
+                
+                // 마커 생성
+                var marker = new naver.maps.Marker({
+                    position: new naver.maps.LatLng(lat, lng),
+                    map: this.map,
+                    icon: {
+                        url: this.plantIcons[icon] || this.plantIcons.seed,
+                        size: iconSize,
+                        anchor: new naver.maps.Point(iconSize.width / 2, iconSize.height / 2)
+                    },
+                    title: '방문: ' + visitCount + '회',
+                    zIndex: 80
+                });
+                
+                // 클릭 이벤트 - 정보창 표시
+                var self = this;
+                naver.maps.Event.addListener(marker, 'click', function() {
+                    self.showPlantInfo(id, lat, lng, icon, visitCount);
+                });
+                
+                // 저장
+                this.plantMarkers[id] = marker;
+                
+                console.log('[NaverMapBridge] Plant marker added:', id, icon);
+            },
+            
+            /**
+             * 식물 마커 업데이트 (성장 시)
+             */
+            updatePlantMarker: function(id, icon, visitCount) {
+                var marker = this.plantMarkers[id];
+                if (!marker) {
+                    console.warn('[NaverMapBridge] Marker not found:', id);
+                    return;
+                }
+                
+                // 아이콘 크기
+                var iconSize;
+                switch(icon) {
+                    case 'seed': iconSize = new naver.maps.Size(32, 32); break;
+                    case 'sprout': iconSize = new naver.maps.Size(36, 36); break;
+                    case 'tree': iconSize = new naver.maps.Size(44, 44); break;
+                    default: iconSize = new naver.maps.Size(32, 32);
+                }
+                
+                // 아이콘 업데이트
+                marker.setIcon({
+                    url: this.plantIcons[icon] || this.plantIcons.seed,
+                    size: iconSize,
+                    anchor: new naver.maps.Point(iconSize.width / 2, iconSize.height / 2)
+                });
+                
+                marker.setTitle('방문: ' + visitCount + '회');
+                
+                console.log('[NaverMapBridge] Plant marker updated:', id, icon);
+            },
+            
+            /**
+             * 식물 마커 제거
+             */
+            removePlantMarker: function(id) {
+                var marker = this.plantMarkers[id];
+                if (marker) {
+                    marker.setMap(null);
+                    delete this.plantMarkers[id];
+                    console.log('[NaverMapBridge] Plant marker removed:', id);
+                }
+            },
+            
+            /**
+             * 모든 식물 마커 제거
+             */
+            clearPlantMarkers: function() {
+                for (var id in this.plantMarkers) {
+                    if (this.plantMarkers.hasOwnProperty(id)) {
+                        this.plantMarkers[id].setMap(null);
+                    }
+                }
+                this.plantMarkers = {};
+                console.log('[NaverMapBridge] All plant markers cleared');
+            },
+            
+            /**
+             * 식물 정보창 표시
+             */
+            showPlantInfo: function(id, lat, lng, icon, visitCount) {
+                // 기존 정보창 닫기
+                if (this.plantInfoWindow) {
+                    this.plantInfoWindow.close();
+                }
+                
+                // 성장 단계 텍스트
+                var stageText;
+                var nextText;
+                switch(icon) {
+                    case 'seed': 
+                        stageText = '🌱 씨앗'; 
+                        nextText = '다음 단계까지 ' + Math.max(0, 3 - visitCount) + '회 방문';
+                        break;
+                    case 'sprout': 
+                        stageText = '🌿 새싹'; 
+                        nextText = '다음 단계까지 ' + Math.max(0, 10 - visitCount) + '회 방문';
+                        break;
+                    case 'tree': 
+                        stageText = '🌳 나무'; 
+                        nextText = '최대 성장 완료!';
+                        break;
+                    default: 
+                        stageText = '🌱 씨앗';
+                        nextText = '';
+                }
+                
+                // 정보창 내용
+                var content = 
+                    '<div style="padding: 10px; min-width: 150px; text-align: center;">' +
+                    '<div style="font-size: 18px; font-weight: bold; margin-bottom: 8px;">' +
+                    stageText +
+                    '</div>' +
+                    '<div style="font-size: 14px; color: #666; margin-bottom: 4px;">' +
+                    '방문 횟수: ' + visitCount + '회' +
+                    '</div>' +
+                    '<div style="font-size: 12px; color: #888;">' +
+                    nextText +
+                    '</div>' +
+                    '</div>';
+                
+                // 정보창 생성
+                this.plantInfoWindow = new naver.maps.InfoWindow({
+                    content: content,
+                    borderWidth: 1,
+                    borderColor: '#2E7D32',
+                    backgroundColor: '#fff',
+                    anchorSize: new naver.maps.Size(10, 10)
+                });
+                
+                // 정보창 열기
+                this.plantInfoWindow.open(this.map, this.plantMarkers[id]);
+            },
+            
+            /**
+             * 가장 가까운 식물로 이동
+             */
+            moveToNearestPlant: function(lat, lng) {
+                var nearestId = null;
+                var nearestDistance = Infinity;
+                
+                for (var id in this.plantMarkers) {
+                    if (this.plantMarkers.hasOwnProperty(id)) {
+                        var marker = this.plantMarkers[id];
+                        var pos = marker.getPosition();
+                        var distance = this.calculatePlantDistance(lat, lng, pos.lat(), pos.lng());
+                        
+                        if (distance < nearestDistance) {
+                            nearestDistance = distance;
+                            nearestId = id;
+                        }
+                    }
+                }
+                
+                if (nearestId) {
+                    var marker = this.plantMarkers[nearestId];
+                    this.map.setCenter(marker.getPosition());
+                    this.map.setZoom(17);
+                }
+            },
+            
+            /**
+             * 식물 거리 계산 (미터)
+             */
+            calculatePlantDistance: function(lat1, lng1, lat2, lng2) {
+                var R = 6371000;
+                var dLat = (lat2 - lat1) * Math.PI / 180;
+                var dLng = (lng2 - lng1) * Math.PI / 180;
+                var a = Math.sin(dLat/2) * Math.sin(dLat/2) +
+                        Math.cos(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) *
+                        Math.sin(dLng/2) * Math.sin(dLng/2);
+                var c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
+                return R * c;
+            },
+            
+            // ==================== 기존 메서드들 ====================
+            
             saveState: function() { return StateManager.saveState(); },
             restoreState: function() {
                 const state = StateManager.restoreState();
@@ -236,7 +475,6 @@
                         const lastPoint = routeCoordinates[routeCoordinates.length - 1];
                         const distance = calculateDistance(lastPoint.lat(), lastPoint.lng(), lat, lng);
                         const minDistance = isFloatingMode ? 2 : 3;
-                        // ⭐ 500m까지 허용 (장거리 이동 지원)
                         if (distance > minDistance && distance < 500) {
                             addRoutePoint(lat, lng);
                             totalDistance += distance;
@@ -545,7 +783,7 @@
             } catch (e) { console.error('Failed to restore route:', e); }
         };
 
-        // ============= ⭐⭐⭐ 단일 캡처 시스템 (타일 없음!) ⭐⭐⭐ =============
+        // ============= 캡처 시스템 =============
         
         let captureState = {
             isCapturing: false,
@@ -553,13 +791,11 @@
             originalZoom: null
         };
 
-        // UI 숨기기
         function hideCaptureUI() {
             console.log('Hiding UI for capture...');
             var panel = document.getElementById('info-panel');
             if (panel) panel.classList.add('capture-hidden');
             
-            // ⭐ 네이버 지도 줌 컨트롤 완전히 숨기기
             var selectors = [
                 '[class*="btn_zoom"]',
                 '[class*="zoom"]', 
@@ -579,7 +815,6 @@
                 });
             });
             
-            // 지도 컨트롤 비활성화
             if (map) {
                 map.setOptions({
                     zoomControl: false,
@@ -593,7 +828,6 @@
             var panel = document.getElementById('info-panel');
             if (panel) panel.classList.remove('capture-hidden');
             
-            // ⭐ 줌 컨트롤 복원
             var selectors = [
                 '[class*="btn_zoom"]',
                 '[class*="zoom"]', 
@@ -613,7 +847,6 @@
                 });
             });
             
-            // 지도 컨트롤 다시 활성화 (플로팅 모드 아닐 때만)
             if (map && !isFloatingMode) {
                 map.setOptions({
                     zoomControl: true
@@ -621,7 +854,6 @@
             }
         }
 
-        // ⭐⭐⭐ 단일 캡처 (타일 없이 한 장!) ⭐⭐⭐
         window.NaverMapBridge.startFullRouteCapture = function(zoom) {
             if (captureState.isCapturing) {
                 console.log('Already capturing...');
@@ -638,21 +870,16 @@
             console.log('Route points:', routeCoordinates.length);
             captureState.isCapturing = true;
             
-            // 원본 상태 저장
             captureState.originalCenter = map.getCenter();
             captureState.originalZoom = map.getZoom();
             
-            // UI 숨기기
             hideCaptureUI();
             
-            // 경로 범위 계산
             var bounds = new naver.maps.LatLngBounds();
             routeCoordinates.forEach(function(coord) {
                 bounds.extend(coord);
             });
             
-            // ⭐ 경로 전체가 화면에 꽉 차게 fitBounds
-            // 여백 최소화로 경로가 크게 보이게
             map.fitBounds(bounds, {
                 top: 30,
                 right: 30,
@@ -663,9 +890,7 @@
             console.log('Map fitted to route bounds');
             console.log('Current zoom after fitBounds:', map.getZoom());
             
-            // 지도 렌더링 대기 후 캡처
             setTimeout(function() {
-                // Unity에 1x1 타일로 알림
                 var info = {
                     totalTiles: 1,
                     zoom: map.getZoom(),
@@ -676,7 +901,6 @@
                 console.log('Capture info:', JSON.stringify(info));
                 window.Unity.call('N/CAPTURE_START:' + JSON.stringify(info));
                 
-                // 바로 타일 캡처 요청 (1개뿐이므로)
                 setTimeout(function() {
                     var tileData = {
                         index: 0,
@@ -686,19 +910,16 @@
                     };
                     console.log('Requesting single capture');
                     window.Unity.call('N/CAPTURE_TILE:' + JSON.stringify(tileData));
-                }, 2000);  // 지도 타일 로딩 대기 (2초)
+                }, 2000);
                 
             }, 500);
         };
 
-        // 캡처 완료 후 호출
         window.NaverMapBridge.onTileCaptured = function(tileIndex) {
             console.log('Single tile captured!');
             
-            // 완료 알림
             window.Unity.call('N/CAPTURE_PROGRESS:100');
             
-            // 캡처 완료
             setTimeout(function() {
                 finishCapture();
             }, 300);
@@ -707,18 +928,15 @@
         function finishCapture() {
             console.log('========== CAPTURE COMPLETE ==========');
             
-            // 원래 상태로 복원
             if (captureState.originalCenter && captureState.originalZoom) {
                 map.setCenter(captureState.originalCenter);
                 map.setZoom(captureState.originalZoom);
             }
             
-            // UI 복원
             showCaptureUI();
             
             captureState.isCapturing = false;
             
-            // Unity에 완료 알림
             window.Unity.call('N/CAPTURE_COMPLETE:' + JSON.stringify({
                 cols: 1,
                 rows: 1,
