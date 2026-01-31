@@ -87,6 +87,41 @@
         .floating-mode .info-row.distance {
             display: none;
         }
+        
+        /* ⭐ 식물 마커 하이라이트 애니메이션 */
+        @keyframes bounce {
+            0%, 100% {
+                transform: translateY(0);
+            }
+            25% {
+                transform: translateY(-15px);
+            }
+            50% {
+                transform: translateY(0);
+            }
+            75% {
+                transform: translateY(-8px);
+            }
+        }
+        
+        @keyframes pulse {
+            0% {
+                transform: scale(1);
+                opacity: 1;
+            }
+            50% {
+                transform: scale(1.2);
+                opacity: 0.8;
+            }
+            100% {
+                transform: scale(1);
+                opacity: 1;
+            }
+        }
+        
+        .plant-marker-highlight {
+            animation: pulse 0.5s ease-in-out 3;
+        }
     </style>
 </head>
 <body>
@@ -383,6 +418,45 @@
             },
             
             /**
+             * ⭐ 식물 마커 강조 표시 (bounce 효과)
+             * 근처 알림 시 해당 식물 마커를 깜빡이게 함
+             */
+            highlightPlantMarker: function(id) {
+                var marker = this.plantMarkers[id];
+                if (!marker) {
+                    console.warn('[NaverMapBridge] Marker not found for highlight:', id);
+                    return;
+                }
+                
+                console.log('[NaverMapBridge] Highlighting plant marker:', id);
+                
+                // 마커 위치 가져오기
+                var position = marker.getPosition();
+                
+                // 지도를 해당 위치로 부드럽게 이동 (panTo)
+                if (this.map) {
+                    this.map.panTo(position);
+                }
+                
+                // 마커 bounce 효과 (CSS 애니메이션)
+                var markerElement = marker.getElement();
+                if (markerElement) {
+                    // 기존 애니메이션 제거
+                    markerElement.style.animation = 'none';
+                    
+                    // 잠시 후 bounce 애니메이션 시작
+                    setTimeout(function() {
+                        markerElement.style.animation = 'bounce 0.5s ease-in-out 3';
+                    }, 10);
+                    
+                    // 애니메이션 끝나면 제거
+                    setTimeout(function() {
+                        markerElement.style.animation = 'none';
+                    }, 1600);
+                }
+            },
+            
+            /**
              * 가장 가까운 식물로 이동
              */
             moveToNearestPlant: function(lat, lng) {
@@ -406,6 +480,11 @@
                     var marker = this.plantMarkers[nearestId];
                     this.map.setCenter(marker.getPosition());
                     this.map.setZoom(17);
+                    
+                    // 하이라이트 효과도 추가
+                    this.highlightPlantMarker(nearestId);
+                    
+                    console.log('[NaverMapBridge] Moved to nearest plant:', nearestId, nearestDistance.toFixed(0) + 'm');
                 }
             },
             
