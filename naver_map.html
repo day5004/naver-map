@@ -251,26 +251,9 @@
                 )
             },
             
-            /**
-             * 식물 마커 추가
-             * @param {string} id - 식물 고유 ID
-             * @param {number} lat - 위도
-             * @param {number} lng - 경도
-             * @param {string} icon - 아이콘 타입 (seed, sprout, tree)
-             * @param {number} visitCount - 방문 횟수
-             */
             addPlantMarker: function(id, lat, lng, icon, visitCount) {
-                if (!this.map) {
-                    console.error('[NaverMapBridge] Map not initialized');
-                    return;
-                }
-                
-                // 기존 마커가 있으면 제거
-                if (this.plantMarkers[id]) {
-                    this.plantMarkers[id].setMap(null);
-                }
-                
-                // 아이콘 크기 (성장 단계별)
+                if (!this.map) { console.error('[NaverMapBridge] Map not initialized'); return; }
+                if (this.plantMarkers[id]) { this.plantMarkers[id].setMap(null); }
                 var iconSize;
                 switch(icon) {
                     case 'seed': iconSize = new naver.maps.Size(32, 32); break;
@@ -278,8 +261,6 @@
                     case 'tree': iconSize = new naver.maps.Size(44, 44); break;
                     default: iconSize = new naver.maps.Size(32, 32);
                 }
-                
-                // 마커 생성
                 var marker = new naver.maps.Marker({
                     position: new naver.maps.LatLng(lat, lng),
                     map: this.map,
@@ -291,30 +272,17 @@
                     title: '방문: ' + visitCount + '회',
                     zIndex: 80
                 });
-                
-                // 클릭 이벤트 - 정보창 표시
                 var self = this;
                 naver.maps.Event.addListener(marker, 'click', function() {
                     self.showPlantInfo(id, lat, lng, icon, visitCount);
                 });
-                
-                // 저장
                 this.plantMarkers[id] = marker;
-                
                 console.log('[NaverMapBridge] Plant marker added:', id, icon);
             },
             
-            /**
-             * 식물 마커 업데이트 (성장 시)
-             */
             updatePlantMarker: function(id, icon, visitCount) {
                 var marker = this.plantMarkers[id];
-                if (!marker) {
-                    console.warn('[NaverMapBridge] Marker not found:', id);
-                    return;
-                }
-                
-                // 아이콘 크기
+                if (!marker) { console.warn('[NaverMapBridge] Marker not found:', id); return; }
                 var iconSize;
                 switch(icon) {
                     case 'seed': iconSize = new naver.maps.Size(32, 32); break;
@@ -322,22 +290,15 @@
                     case 'tree': iconSize = new naver.maps.Size(44, 44); break;
                     default: iconSize = new naver.maps.Size(32, 32);
                 }
-                
-                // 아이콘 업데이트
                 marker.setIcon({
                     url: this.plantIcons[icon] || this.plantIcons.seed,
                     size: iconSize,
                     anchor: new naver.maps.Point(iconSize.width / 2, iconSize.height / 2)
                 });
-                
                 marker.setTitle('방문: ' + visitCount + '회');
-                
                 console.log('[NaverMapBridge] Plant marker updated:', id, icon);
             },
             
-            /**
-             * 식물 마커 제거
-             */
             removePlantMarker: function(id) {
                 var marker = this.plantMarkers[id];
                 if (marker) {
@@ -347,9 +308,6 @@
                 }
             },
             
-            /**
-             * 모든 식물 마커 제거
-             */
             clearPlantMarkers: function() {
                 for (var id in this.plantMarkers) {
                     if (this.plantMarkers.hasOwnProperty(id)) {
@@ -360,18 +318,9 @@
                 console.log('[NaverMapBridge] All plant markers cleared');
             },
             
-            /**
-             * 식물 정보창 표시
-             */
             showPlantInfo: function(id, lat, lng, icon, visitCount) {
-                // 기존 정보창 닫기
-                if (this.plantInfoWindow) {
-                    this.plantInfoWindow.close();
-                }
-                
-                // 성장 단계 텍스트
-                var stageText;
-                var nextText;
+                if (this.plantInfoWindow) { this.plantInfoWindow.close(); }
+                var stageText, nextText;
                 switch(icon) {
                     case 'seed': 
                         stageText = '🌱 씨앗'; 
@@ -389,22 +338,12 @@
                         stageText = '🌱 씨앗';
                         nextText = '';
                 }
-                
-                // 정보창 내용
                 var content = 
                     '<div style="padding: 10px; min-width: 150px; text-align: center;">' +
-                    '<div style="font-size: 18px; font-weight: bold; margin-bottom: 8px;">' +
-                    stageText +
-                    '</div>' +
-                    '<div style="font-size: 14px; color: #666; margin-bottom: 4px;">' +
-                    '방문 횟수: ' + visitCount + '회' +
-                    '</div>' +
-                    '<div style="font-size: 12px; color: #888;">' +
-                    nextText +
-                    '</div>' +
+                    '<div style="font-size: 18px; font-weight: bold; margin-bottom: 8px;">' + stageText + '</div>' +
+                    '<div style="font-size: 14px; color: #666; margin-bottom: 4px;">방문 횟수: ' + visitCount + '회</div>' +
+                    '<div style="font-size: 12px; color: #888;">' + nextText + '</div>' +
                     '</div>';
-                
-                // 정보창 생성
                 this.plantInfoWindow = new naver.maps.InfoWindow({
                     content: content,
                     borderWidth: 1,
@@ -412,85 +351,46 @@
                     backgroundColor: '#fff',
                     anchorSize: new naver.maps.Size(10, 10)
                 });
-                
-                // 정보창 열기
                 this.plantInfoWindow.open(this.map, this.plantMarkers[id]);
             },
             
-            /**
-             * ⭐ 식물 마커 강조 표시 (bounce 효과)
-             * 근처 알림 시 해당 식물 마커를 깜빡이게 함
-             */
             highlightPlantMarker: function(id) {
                 var marker = this.plantMarkers[id];
-                if (!marker) {
-                    console.warn('[NaverMapBridge] Marker not found for highlight:', id);
-                    return;
-                }
-                
+                if (!marker) { console.warn('[NaverMapBridge] Marker not found for highlight:', id); return; }
                 console.log('[NaverMapBridge] Highlighting plant marker:', id);
-                
-                // 마커 위치 가져오기
                 var position = marker.getPosition();
-                
-                // 지도를 해당 위치로 부드럽게 이동 (panTo)
-                if (this.map) {
-                    this.map.panTo(position);
-                }
-                
-                // 마커 bounce 효과 (CSS 애니메이션)
+                if (this.map) { this.map.panTo(position); }
                 var markerElement = marker.getElement();
                 if (markerElement) {
-                    // 기존 애니메이션 제거
                     markerElement.style.animation = 'none';
-                    
-                    // 잠시 후 bounce 애니메이션 시작
-                    setTimeout(function() {
-                        markerElement.style.animation = 'bounce 0.5s ease-in-out 3';
-                    }, 10);
-                    
-                    // 애니메이션 끝나면 제거
-                    setTimeout(function() {
-                        markerElement.style.animation = 'none';
-                    }, 1600);
+                    setTimeout(function() { markerElement.style.animation = 'bounce 0.5s ease-in-out 3'; }, 10);
+                    setTimeout(function() { markerElement.style.animation = 'none'; }, 1600);
                 }
             },
             
-            /**
-             * 가장 가까운 식물로 이동
-             */
             moveToNearestPlant: function(lat, lng) {
                 var nearestId = null;
                 var nearestDistance = Infinity;
-                
                 for (var id in this.plantMarkers) {
                     if (this.plantMarkers.hasOwnProperty(id)) {
                         var marker = this.plantMarkers[id];
                         var pos = marker.getPosition();
                         var distance = this.calculatePlantDistance(lat, lng, pos.lat(), pos.lng());
-                        
                         if (distance < nearestDistance) {
                             nearestDistance = distance;
                             nearestId = id;
                         }
                     }
                 }
-                
                 if (nearestId) {
                     var marker = this.plantMarkers[nearestId];
                     this.map.setCenter(marker.getPosition());
                     this.map.setZoom(17);
-                    
-                    // 하이라이트 효과도 추가
                     this.highlightPlantMarker(nearestId);
-                    
                     console.log('[NaverMapBridge] Moved to nearest plant:', nearestId, nearestDistance.toFixed(0) + 'm');
                 }
             },
             
-            /**
-             * 식물 거리 계산 (미터)
-             */
             calculatePlantDistance: function(lat1, lng1, lat2, lng2) {
                 var R = 6371000;
                 var dLat = (lat2 - lat1) * Math.PI / 180;
@@ -581,6 +481,48 @@
             updateCurrentLocation: function(lat, lng) { updateCurrentMarker(lat, lng); },
             addRoutePoint: function(lat, lng) { addRoutePoint(lat, lng); },
             
+            // ⭐⭐⭐ 새로 추가: 라인에 점 1개만 이어붙이기 ⭐⭐⭐
+            appendPoint: function(lat, lng) {
+                if (typeof naver === 'undefined' || !naver.maps) return;
+                
+                var newCoord = new naver.maps.LatLng(lat, lng);
+                
+                // 내부 좌표 배열에 추가
+                routeCoordinates.push(newCoord);
+                
+                if (routePath) {
+                    // ⭐ 기존 Polyline의 path에 점 1개만 추가 (전체 다시 그리지 않음!)
+                    var path = routePath.getPath();
+                    path.push(newCoord);
+                } else if (routeCoordinates.length >= 2) {
+                    // 첫 Polyline 생성
+                    routePath = new naver.maps.Polyline({
+                        map: map,
+                        path: routeCoordinates,
+                        strokeColor: '#4285F4',
+                        strokeOpacity: 0.9,
+                        strokeWeight: 6,
+                        strokeLineCap: 'round',
+                        strokeLineJoin: 'round'
+                    });
+                }
+                
+                // 거리 업데이트
+                if (routeCoordinates.length >= 2) {
+                    var prev = routeCoordinates[routeCoordinates.length - 2];
+                    var dist = calculateDistance(prev.lat(), prev.lng(), lat, lng);
+                    totalDistance += dist;
+                    document.getElementById('distance').textContent = Math.round(totalDistance);
+                }
+                
+                // 포인트 수 표시 업데이트
+                document.getElementById('pointCount').textContent = routeCoordinates.length;
+                
+                console.log('[NaverMap] appendPoint: ' + lat.toFixed(6) + ', ' + lng.toFixed(6) + 
+                            ' | line coords: ' + routeCoordinates.length);
+            },
+            
+            // drawRoute는 복원용으로만 사용 (전체 다시 그리기)
             drawRoute: function(pointsArray) {
                 if (typeof naver === 'undefined' || !naver.maps) return;
                 if (!Array.isArray(pointsArray)) {
@@ -592,6 +534,8 @@
                 });
                 updateRoute();
                 document.getElementById('pointCount').textContent = routeCoordinates.length;
+                
+                console.log('[NaverMap] drawRoute (restore): ' + pointsArray.length + ' points');
             }
         };
 
@@ -876,15 +820,9 @@
             if (panel) panel.classList.add('capture-hidden');
             
             var selectors = [
-                '[class*="btn_zoom"]',
-                '[class*="zoom"]', 
-                '.naver-map-control',
-                '[class*="map_btn"]',
-                '[class*="btn_"]',
-                '[class*="ctrl"]',
-                '[class*="control"]'
+                '[class*="btn_zoom"]', '[class*="zoom"]', '.naver-map-control',
+                '[class*="map_btn"]', '[class*="btn_"]', '[class*="ctrl"]', '[class*="control"]'
             ];
-            
             selectors.forEach(function(selector) {
                 var elements = document.querySelectorAll(selector);
                 elements.forEach(function(el) {
@@ -893,13 +831,7 @@
                     el.style.setProperty('opacity', '0', 'important');
                 });
             });
-            
-            if (map) {
-                map.setOptions({
-                    zoomControl: false,
-                    scaleControl: false
-                });
-            }
+            if (map) { map.setOptions({ zoomControl: false, scaleControl: false }); }
         }
         
         function showCaptureUI() {
@@ -908,15 +840,9 @@
             if (panel) panel.classList.remove('capture-hidden');
             
             var selectors = [
-                '[class*="btn_zoom"]',
-                '[class*="zoom"]', 
-                '.naver-map-control',
-                '[class*="map_btn"]',
-                '[class*="btn_"]',
-                '[class*="ctrl"]',
-                '[class*="control"]'
+                '[class*="btn_zoom"]', '[class*="zoom"]', '.naver-map-control',
+                '[class*="map_btn"]', '[class*="btn_"]', '[class*="ctrl"]', '[class*="control"]'
             ];
-            
             selectors.forEach(function(selector) {
                 var elements = document.querySelectorAll(selector);
                 elements.forEach(function(el) {
@@ -925,114 +851,59 @@
                     el.style.removeProperty('opacity');
                 });
             });
-            
-            if (map && !isFloatingMode) {
-                map.setOptions({
-                    zoomControl: true
-                });
-            }
+            if (map && !isFloatingMode) { map.setOptions({ zoomControl: true }); }
         }
 
         window.NaverMapBridge.startFullRouteCapture = function(zoom) {
-            if (captureState.isCapturing) {
-                console.log('Already capturing...');
-                return;
-            }
-            
+            if (captureState.isCapturing) { console.log('Already capturing...'); return; }
             if (routeCoordinates.length < 2) {
                 console.log('No route to capture');
                 window.Unity.call('N/CAPTURE_ERROR:No route data');
                 return;
             }
-            
             console.log('========== STARTING SINGLE CAPTURE ==========');
-            console.log('Route points:', routeCoordinates.length);
             captureState.isCapturing = true;
-            
             captureState.originalCenter = map.getCenter();
             captureState.originalZoom = map.getZoom();
-            
             hideCaptureUI();
-            
             var bounds = new naver.maps.LatLngBounds();
-            routeCoordinates.forEach(function(coord) {
-                bounds.extend(coord);
-            });
-            
-            map.fitBounds(bounds, {
-                top: 30,
-                right: 30,
-                bottom: 30,
-                left: 30
-            });
-            
-            console.log('Map fitted to route bounds');
-            console.log('Current zoom after fitBounds:', map.getZoom());
-            
+            routeCoordinates.forEach(function(coord) { bounds.extend(coord); });
+            map.fitBounds(bounds, { top: 30, right: 30, bottom: 30, left: 30 });
             setTimeout(function() {
-                var info = {
-                    totalTiles: 1,
-                    zoom: map.getZoom(),
-                    cols: 1,
-                    rows: 1
-                };
-                
-                console.log('Capture info:', JSON.stringify(info));
+                var info = { totalTiles: 1, zoom: map.getZoom(), cols: 1, rows: 1 };
                 window.Unity.call('N/CAPTURE_START:' + JSON.stringify(info));
-                
                 setTimeout(function() {
-                    var tileData = {
-                        index: 0,
-                        row: 0,
-                        col: 0,
-                        total: 1
-                    };
-                    console.log('Requesting single capture');
+                    var tileData = { index: 0, row: 0, col: 0, total: 1 };
                     window.Unity.call('N/CAPTURE_TILE:' + JSON.stringify(tileData));
                 }, 2000);
-                
             }, 500);
         };
 
         window.NaverMapBridge.onTileCaptured = function(tileIndex) {
             console.log('Single tile captured!');
-            
             window.Unity.call('N/CAPTURE_PROGRESS:100');
-            
-            setTimeout(function() {
-                finishCapture();
-            }, 300);
+            setTimeout(function() { finishCapture(); }, 300);
         };
 
         function finishCapture() {
             console.log('========== CAPTURE COMPLETE ==========');
-            
             if (captureState.originalCenter && captureState.originalZoom) {
                 map.setCenter(captureState.originalCenter);
                 map.setZoom(captureState.originalZoom);
             }
-            
             showCaptureUI();
-            
             captureState.isCapturing = false;
-            
-            window.Unity.call('N/CAPTURE_COMPLETE:' + JSON.stringify({
-                cols: 1,
-                rows: 1,
-                total: 1
-            }));
+            window.Unity.call('N/CAPTURE_COMPLETE:' + JSON.stringify({ cols: 1, rows: 1, total: 1 }));
         }
 
         window.NaverMapBridge.cancelCapture = function() {
             if (captureState.isCapturing) {
                 console.log('Capture cancelled');
                 captureState.isCapturing = false;
-                
                 if (captureState.originalCenter && captureState.originalZoom) {
                     map.setCenter(captureState.originalCenter);
                     map.setZoom(captureState.originalZoom);
                 }
-                
                 showCaptureUI();
                 window.Unity.call('N/CAPTURE_CANCELLED');
             }
