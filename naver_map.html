@@ -481,24 +481,183 @@
             updateCurrentLocation: function(lat, lng) { updateCurrentMarker(lat, lng); },
             addRoutePoint: function(lat, lng) { addRoutePoint(lat, lng); },
             
-            // ⭐⭐⭐ 새로 추가: 라인에 점 1개만 이어붙이기 ⭐⭐⭐
+            // ⭐⭐⭐ 부드러운 곡선 경로 시스템 ⭐⭐⭐
+            
+            // 원본 GPS 포인트 저장 (보간용)
+            rawGPSPoints: [],
+            
+            // Catmull-Rom Spline 보간
+            catmullRomSpline: function(p0, p1, p2, p3, t) {
+                var t2 = t * t;
+                var t3 = t2 * t;
+                return {
+                    lat: 0.5 * ((2 * p1.lat) +
+                        (-p0.lat + p2.lat) * t +
+                        (2 * p0.lat - 5 * p1.lat + 4 * p2.lat - p3.lat) * t2 +
+                        (-p0.lat + 3 * p1.lat - 3 * p2.lat + p3.lat) * t3),
+                    lng: 0.5 * ((2 * p1.lng) +
+                        (-p0.lng + p2.lng) * t +
+                        (2 * p0.lng - 5 * p1.lng + 4 * p2.lng - p3.lng) * t2 +
+                        (-p0.lng + 3 * p1.lng - 3 * p2.lng + p3.lng) * t3)
+                };
+            },
+            
+            // 부드러운 경로 생성
+            generateSmoothPath: function(points) {
+                if (points.length < 2) return points;
+                if (points.length === 2) return points;
+                
+                var smoothPath = [];
+                var segmentsPerPoint = 5; // 포인트 사이 보간 개수
+                
+                for (var i = 0; i < points.length - 1; i++) {
+                    var p0 = points[Math.max(0, i - 1)];
+                    var p1 = points[i];
+                    var p2 = points[Math.min(points.length - 1, i + 1)];
+                    var p3 = points[Math.min(points.length - 1, i + 2)];
+                    
+                    // 첫 포인트는 항상 추가
+                    if (i === 0) {
+                        smoothPath.push(new naver.maps.LatLng(p1.lat, p1.lng));
+                    }
+                    
+                    // 보간 포인트 추가
+                    for (var j = 1; j <= segmentsPerPoint; j++) {
+                        var t = j / segmentsPerPoint;
+                        var interpolated = this.catmullRomSpline(
+                            {lat: p0.lat(), lng: p0.lng()},
+                            {lat: p1.lat(), lng: p1.lng()},
+                            {lat: p2.lat(), lng: p2.lng()},
+                            {lat: p3.lat(), lng: p3.lng()},
+                            t
+                        );
+                        smoothPath.push(new naver.maps.LatLng(interpolated.lat, interpolated.lng));
+                    }
+                }
+                
+                return smoothPath;
+            },
+            
+            // 마지막 구간만 부드럽게 업데이트
+            updateLastSegmentSmooth: function() {
+                var points = this.rawGPSPoints;
+                if (points.length < 2) return;
+                
+                // 마지막 4개 포인트로 보간
+                var startIdx = Math.max(0, points.length - 4);
+                var lastPoints = points.slice(startIdx);
+                
+                if (lastPoints.length < 2) return;
+                
+                // 새 구간의 보간 포인트 생성
+                var newSegment = [];
+                var segmentsPerPoint = 5;
+                
+                for (var i = 0; i < lastPoints.length - 1; i++) {
+                    var idx = startIdx + i;
+                    var p0 = points[Math.max(0, idx - 1)];
+                    var p1 = points[idx];
+                    var p2 = points[Math.min(points.length - 1, idx + 1)];
+                    var p3 = points[Math.min(points.length - 1, idx + 2)];
+                    
+                    for (var j = 1; j <= segmentsPerPoint; j++) {
+                        var t = j / segmentsPerPoint;
+                        var interpolated = this.catmullRomSpline(
+                            {lat: p0.lat(), lng: p0.lng()},
+                            {lat: p1.lat(), lng: p1.lng()},
+                            {lat: p2.lat(), lng: p2.lng()},
+                            {lat: p3.lat(), lng: p3.lng()},
+                            t
+                        );
+                        newSegment.push(new naver.maps.LatLng(interpolated.lat, interpolated.lng));
+                    }
+                }
+                
+                // 기존 path 업데이트 (마지막 구간 교체)
+                if (routePath && newSegment.length > 0) {
+                    var path = routePath.getPath();
+                    var removeCount = Math.min((lastPoints.length - 1) * segmentsPerPoint, path.length - 1);
+                    
+                    // 이전 보간 포인트 제거
+                    while (removeCount > 0 && path.length > 1) {
+                        path.pop();
+                        removeCount--;
+                    }
+                    
+                    // 새 보간 포인트 추가
+                    newSegment.forEach(function(coord) {
+                        path.push(coord);
+                    });
+                }
+            },
+            
             appendPoint: function(lat, lng) {
                 if (typeof naver === 'undefined' || !naver.maps) return;
                 
                 var newCoord = new naver.maps.LatLng(lat, lng);
                 
-                // 내부 좌표 배열에 추가
+                // 원본 GPS 포인트 저장
+                this.rawGPSPoints.push(newCoord);
                 routeCoordinates.push(newCoord);
                 
-                if (routePath) {
-                    // ⭐ 기존 Polyline의 path에 점 1개만 추가 (전체 다시 그리지 않음!)
-                    var path = routePath.getPath();
-                    path.push(newCoord);
-                } else if (routeCoordinates.length >= 2) {
-                    // 첫 Polyline 생성
+                // 거리 업데이트
+                if (this.rawGPSPoints.length >= 2) {
+                    var prev = this.rawGPSPoints[this.rawGPSPoints.length - 2];
+                    var dist = calculateDistance(prev.lat(), prev.lng(), lat, lng);
+                    totalDistance += dist;
+                    document.getElementById('distance').textContent = Math.round(totalDistance);
+                }
+                
+                // Polyline 생성/업데이트
+                if (this.rawGPSPoints.length === 2) {
+                    // 첫 Polyline 생성 (부드러운 경로)
+                    var smoothPath = this.generateSmoothPath(this.rawGPSPoints);
                     routePath = new naver.maps.Polyline({
                         map: map,
-                        path: routeCoordinates,
+                        path: smoothPath,
+                        strokeColor: '#4285F4',
+                        strokeOpacity: 0.9,
+                        strokeWeight: 6,
+                        strokeLineCap: 'round',
+                        strokeLineJoin: 'round'
+                    });
+                } else if (this.rawGPSPoints.length > 2) {
+                    // 마지막 구간만 부드럽게 업데이트
+                    this.updateLastSegmentSmooth();
+                }
+                
+                // 포인트 수 표시 업데이트
+                document.getElementById('pointCount').textContent = this.rawGPSPoints.length;
+                
+                console.log('[NaverMap] appendPoint (smooth): ' + lat.toFixed(6) + ', ' + lng.toFixed(6) + 
+                            ' | raw: ' + this.rawGPSPoints.length);
+            },
+            
+            // drawRoute는 복원용으로만 사용 (전체 다시 그리기 - 부드럽게)
+            drawRoute: function(pointsArray) {
+                if (typeof naver === 'undefined' || !naver.maps) return;
+                if (!Array.isArray(pointsArray)) {
+                    try { pointsArray = JSON.parse(pointsArray); } catch (e) { return; }
+                }
+                
+                // 원본 포인트 저장
+                this.rawGPSPoints = [];
+                routeCoordinates = [];
+                
+                pointsArray.forEach(p => {
+                    var coord = new naver.maps.LatLng(p.lat, p.lng);
+                    this.rawGPSPoints.push(coord);
+                    routeCoordinates.push(coord);
+                });
+                
+                // 부드러운 경로로 Polyline 생성
+                if (routePath) routePath.setMap(null);
+                
+                if (this.rawGPSPoints.length > 1) {
+                    var smoothPath = this.generateSmoothPath(this.rawGPSPoints);
+                    routePath = new naver.maps.Polyline({
+                        map: map,
+                        path: smoothPath,
                         strokeColor: '#4285F4',
                         strokeOpacity: 0.9,
                         strokeWeight: 6,
@@ -507,35 +666,9 @@
                     });
                 }
                 
-                // 거리 업데이트
-                if (routeCoordinates.length >= 2) {
-                    var prev = routeCoordinates[routeCoordinates.length - 2];
-                    var dist = calculateDistance(prev.lat(), prev.lng(), lat, lng);
-                    totalDistance += dist;
-                    document.getElementById('distance').textContent = Math.round(totalDistance);
-                }
+                document.getElementById('pointCount').textContent = this.rawGPSPoints.length;
                 
-                // 포인트 수 표시 업데이트
-                document.getElementById('pointCount').textContent = routeCoordinates.length;
-                
-                console.log('[NaverMap] appendPoint: ' + lat.toFixed(6) + ', ' + lng.toFixed(6) + 
-                            ' | line coords: ' + routeCoordinates.length);
-            },
-            
-            // drawRoute는 복원용으로만 사용 (전체 다시 그리기)
-            drawRoute: function(pointsArray) {
-                if (typeof naver === 'undefined' || !naver.maps) return;
-                if (!Array.isArray(pointsArray)) {
-                    try { pointsArray = JSON.parse(pointsArray); } catch (e) { return; }
-                }
-                routeCoordinates = [];
-                pointsArray.forEach(p => {
-                    routeCoordinates.push(new naver.maps.LatLng(p.lat, p.lng));
-                });
-                updateRoute();
-                document.getElementById('pointCount').textContent = routeCoordinates.length;
-                
-                console.log('[NaverMap] drawRoute (restore): ' + pointsArray.length + ' points');
+                console.log('[NaverMap] drawRoute (smooth restore): ' + pointsArray.length + ' points');
             }
         };
 
@@ -718,6 +851,10 @@
 
         function clearRoute() {
             routeCoordinates = [];
+            // rawGPSPoints도 초기화
+            if (window.NaverMapBridge) {
+                window.NaverMapBridge.rawGPSPoints = [];
+            }
             isTracking = false;
             totalDistance = 0;
             if (routePath) { routePath.setMap(null); routePath = null; }
