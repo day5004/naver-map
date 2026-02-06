@@ -486,6 +486,36 @@
             // 원본 GPS 포인트 저장 (보간용)
             rawGPSPoints: [],
             
+            // ⭐ 유효한 좌표인지 확인 (0,0 및 한국 범위 밖 필터링)
+            isValidCoordinate: function(lat, lng) {
+                // 0,0 좌표 필터링
+                if (lat === 0 && lng === 0) {
+                    console.log('[NaverMap] ❌ Invalid: 0,0 coordinate');
+                    return false;
+                }
+                // 한국 범위 체크 (위도 33~43, 경도 124~132)
+                if (lat < 33 || lat > 43 || lng < 124 || lng > 132) {
+                    console.log('[NaverMap] ❌ Invalid: out of Korea range', lat, lng);
+                    return false;
+                }
+                return true;
+            },
+            
+            // ⭐ 점프 거리 체크 (너무 멀면 무시)
+            isReasonableJump: function(lat, lng) {
+                if (this.rawGPSPoints.length === 0) return true;
+                
+                var lastPoint = this.rawGPSPoints[this.rawGPSPoints.length - 1];
+                var distance = calculateDistance(lastPoint.lat(), lastPoint.lng(), lat, lng);
+                
+                // 100m 초과 점프는 무시
+                if (distance > 100) {
+                    console.log('[NaverMap] ❌ Jump too far:', distance.toFixed(0) + 'm');
+                    return false;
+                }
+                return true;
+            },
+            
             // Catmull-Rom Spline 보간
             catmullRomSpline: function(p0, p1, p2, p3, t) {
                 var t2 = t * t;
@@ -518,7 +548,7 @@
                     
                     // 첫 포인트는 항상 추가
                     if (i === 0) {
-                        smoothPath.push(new naver.maps.LatLng(p1.lat, p1.lng));
+                        smoothPath.push(new naver.maps.LatLng(p1.lat(), p1.lng()));
                     }
                     
                     // 보간 포인트 추가
@@ -594,6 +624,15 @@
             appendPoint: function(lat, lng) {
                 if (typeof naver === 'undefined' || !naver.maps) return;
                 
+                // ⭐⭐⭐ 유효성 검사 추가 ⭐⭐⭐
+                if (!this.isValidCoordinate(lat, lng)) {
+                    return; // 0,0 또는 한국 밖 좌표 무시
+                }
+                
+                if (!this.isReasonableJump(lat, lng)) {
+                    return; // 100m 초과 점프 무시
+                }
+                
                 var newCoord = new naver.maps.LatLng(lat, lng);
                 
                 // 원본 GPS 포인트 저장
@@ -629,7 +668,7 @@
                 // 포인트 수 표시 업데이트
                 document.getElementById('pointCount').textContent = this.rawGPSPoints.length;
                 
-                console.log('[NaverMap] appendPoint (smooth): ' + lat.toFixed(6) + ', ' + lng.toFixed(6) + 
+                console.log('[NaverMap] ✅ appendPoint: ' + lat.toFixed(6) + ', ' + lng.toFixed(6) + 
                             ' | raw: ' + this.rawGPSPoints.length);
             },
             
@@ -640,14 +679,32 @@
                     try { pointsArray = JSON.parse(pointsArray); } catch (e) { return; }
                 }
                 
-                // 원본 포인트 저장
+                // 원본 포인트 저장 (유효한 좌표만!)
                 this.rawGPSPoints = [];
                 routeCoordinates = [];
                 
-                pointsArray.forEach(p => {
+                var self = this;
+                var lastValidPoint = null;
+                
+                pointsArray.forEach(function(p) {
+                    // ⭐ 유효성 검사
+                    if (!self.isValidCoordinate(p.lat, p.lng)) {
+                        return; // 0,0 또는 한국 밖 무시
+                    }
+                    
+                    // 점프 거리 체크
+                    if (lastValidPoint) {
+                        var distance = calculateDistance(lastValidPoint.lat, lastValidPoint.lng, p.lat, p.lng);
+                        if (distance > 100) {
+                            console.log('[NaverMap] drawRoute skip jump:', distance.toFixed(0) + 'm');
+                            return; // 100m 초과 점프 무시
+                        }
+                    }
+                    
                     var coord = new naver.maps.LatLng(p.lat, p.lng);
-                    this.rawGPSPoints.push(coord);
+                    self.rawGPSPoints.push(coord);
                     routeCoordinates.push(coord);
+                    lastValidPoint = p;
                 });
                 
                 // 부드러운 경로로 Polyline 생성
@@ -668,7 +725,7 @@
                 
                 document.getElementById('pointCount').textContent = this.rawGPSPoints.length;
                 
-                console.log('[NaverMap] drawRoute (smooth restore): ' + pointsArray.length + ' points');
+                console.log('[NaverMap] drawRoute (filtered): ' + this.rawGPSPoints.length + '/' + pointsArray.length + ' points');
             }
         };
 
