@@ -501,15 +501,15 @@
                 return true;
             },
             
-            // ⭐ 점프 거리 체크 (너무 멀면 무시)
+            // ⭐ 점프 거리 체크 (너무 멀면 무시 - 운송수단 고려)
             isReasonableJump: function(lat, lng) {
                 if (this.rawGPSPoints.length === 0) return true;
                 
                 var lastPoint = this.rawGPSPoints[this.rawGPSPoints.length - 1];
                 var distance = calculateDistance(lastPoint.lat(), lastPoint.lng(), lat, lng);
                 
-                // 100m 초과 점프는 무시
-                if (distance > 100) {
+                // 300m 초과 점프는 무시 (자전거/버스/지하철 고려)
+                if (distance > 300) {
                     console.log('[NaverMap] ❌ Jump too far:', distance.toFixed(0) + 'm');
                     return false;
                 }
@@ -692,12 +692,12 @@
                         return; // 0,0 또는 한국 밖 무시
                     }
                     
-                    // 점프 거리 체크
+                    // 점프 거리 체크 (운송수단 고려 300m)
                     if (lastValidPoint) {
                         var distance = calculateDistance(lastValidPoint.lat, lastValidPoint.lng, p.lat, p.lng);
-                        if (distance > 100) {
+                        if (distance > 300) {
                             console.log('[NaverMap] drawRoute skip jump:', distance.toFixed(0) + 'm');
-                            return; // 100m 초과 점프 무시
+                            return; // 300m 초과 점프 무시
                         }
                     }
                     
