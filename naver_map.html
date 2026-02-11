@@ -692,12 +692,12 @@
                         return; // 0,0 또는 한국 밖 무시
                     }
                     
-                    // 점프 거리 체크 (운송수단 고려 300m)
+                    // ⭐⭐⭐ 복원 시에는 점프 거리 1km로 완화 (백그라운드 긴 간격 허용) ⭐⭐⭐
                     if (lastValidPoint) {
                         var distance = calculateDistance(lastValidPoint.lat, lastValidPoint.lng, p.lat, p.lng);
-                        if (distance > 300) {
-                            console.log('[NaverMap] drawRoute skip jump:', distance.toFixed(0) + 'm');
-                            return; // 300m 초과 점프 무시
+                        if (distance > 1000) {  // 1km 초과만 무시
+                            console.log('[NaverMap] drawRoute skip jump:', distance.toFixed(0) + 'm (>1km)');
+                            return;
                         }
                     }
                     
