@@ -682,6 +682,7 @@
                 // 원본 포인트 저장 (유효한 좌표만!)
                 this.rawGPSPoints = [];
                 routeCoordinates = [];
+                totalDistance = 0;  // ⭐ 거리 초기화
                 
                 var self = this;
                 var lastValidPoint = null;
@@ -699,6 +700,8 @@
                             console.log('[NaverMap] drawRoute skip jump:', distance.toFixed(0) + 'm (>1km)');
                             return;
                         }
+                        // ⭐ 거리 누적
+                        totalDistance += distance;
                     }
                     
                     var coord = new naver.maps.LatLng(p.lat, p.lng);
@@ -706,6 +709,9 @@
                     routeCoordinates.push(coord);
                     lastValidPoint = p;
                 });
+                
+                // ⭐ 거리 표시 업데이트
+                document.getElementById('distance').textContent = Math.round(totalDistance);
                 
                 // 부드러운 경로로 Polyline 생성
                 if (routePath) routePath.setMap(null);
@@ -725,7 +731,7 @@
                 
                 document.getElementById('pointCount').textContent = this.rawGPSPoints.length;
                 
-                console.log('[NaverMap] drawRoute (filtered): ' + this.rawGPSPoints.length + '/' + pointsArray.length + ' points');
+                console.log('[NaverMap] drawRoute: ' + this.rawGPSPoints.length + '/' + pointsArray.length + ' points, ' + Math.round(totalDistance) + 'm');
             }
         };
 
@@ -765,6 +771,12 @@
             if (savedState) applyRestoredState(savedState);
             updateStatusDisplay();
             console.log('Map initialized');
+            
+            // ⭐⭐⭐ 지도 초기화 완료 → Unity에 알림 ⭐⭐⭐
+            setTimeout(function() {
+                window.location.href = 'toapp://mapready';
+                console.log('[NaverMap] Sent mapready to Unity');
+            }, 100);
         }
 
         function updateStatusDisplay() {
