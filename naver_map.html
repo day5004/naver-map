@@ -156,7 +156,143 @@
             console.log('FLOATING MODE ACTIVATED');
         }
         
-        // 상태 보존
+        // ==================== 자정 리셋 시스템 ====================
+        
+        const MidnightManager = {
+            LAST_DATE_KEY: 'lastRouteDate',
+            PROCESSING_KEY: 'midnightProcessing',
+            
+            // 오늘 날짜 문자열 (YYYY-MM-DD)
+            getTodayString: function() {
+                const now = new Date();
+                const y = now.getFullYear();
+                const m = String(now.getMonth() + 1).padStart(2, '0');
+                const d = String(now.getDate()).padStart(2, '0');
+                return y + '-' + m + '-' + d;
+            },
+            
+            // 처리 중 플래그 체크 (중복 실행 방지)
+            isProcessing: function() {
+                try {
+                    const flag = localStorage.getItem(this.PROCESSING_KEY);
+                    if (!flag) return false;
+                    
+                    // 5분 이상 지났으면 플래그 무시 (멈춘 것으로 간주)
+                    const timestamp = parseInt(flag);
+                    if (isNaN(timestamp)) return false;
+                    
+                    const elapsed = Date.now() - timestamp;
+                    if (elapsed > 300000) { // 5분
+                        this.clearProcessing();
+                        return false;
+                    }
+                    
+                    return true;
+                } catch (e) { return false; }
+            },
+            
+            setProcessing: function() {
+                try {
+                    localStorage.setItem(this.PROCESSING_KEY, Date.now().toString());
+                } catch (e) {}
+            },
+            
+            clearProcessing: function() {
+                try {
+                    localStorage.removeItem(this.PROCESSING_KEY);
+                } catch (e) {}
+            },
+            
+            // 자정 체크 + 처리
+            checkAndResetIfNewDay: function() {
+                const today = this.getTodayString();
+                let savedDate;
+                try {
+                    savedDate = localStorage.getItem(this.LAST_DATE_KEY);
+                } catch (e) { return; }
+                
+                // 처음 실행 → 날짜만 저장
+                if (!savedDate) {
+                    try { localStorage.setItem(this.LAST_DATE_KEY, today); } catch (e) {}
+                    return;
+                }
+                
+                // 날짜 변경 없음
+                if (savedDate === today) return;
+                
+                // 이미 처리 중
+                if (this.isProcessing()) {
+                    console.log('[Midnight] 이미 처리 중, 스킵');
+                    return;
+                }
+                
+                // 자정 넘김 감지!
+                console.log('[Midnight] 날짜 변경 감지: ' + savedDate + ' → ' + today);
+                this.setProcessing();
+                
+                // 라인 있으면 Unity에 캡쳐 요청
+                if (routeCoordinates && routeCoordinates.length > 0) {
+                    // Unity가 살아있으면 캡쳐 요청
+                    window.Unity.call('N/MIDNIGHT_RESET:' + savedDate);
+                    
+                    // Unity가 캡쳐 완료 신호(completeMidnightReset) 호출하지 않을 수 있으니
+                    // 최대 10초 후 강제 리셋
+                    setTimeout(function() {
+                        if (MidnightManager.isProcessing()) {
+                            console.log('[Midnight] Unity 응답 없음, 강제 리셋');
+                            MidnightManager.performReset(today);
+                        }
+                    }, 10000);
+                } else {
+                    // 라인 없으면 바로 리셋
+                    this.performReset(today);
+                }
+            },
+            
+            // 실제 리셋 수행
+            performReset: function(newDate) {
+                console.log('[Midnight] 리셋 수행');
+                
+                // 라인 + 거리 + 마커 모두 초기화
+                if (typeof clearRoute === 'function') {
+                    clearRoute();
+                }
+                
+                // 새 날짜 저장
+                try {
+                    localStorage.setItem(this.LAST_DATE_KEY, newDate);
+                } catch (e) {}
+                
+                this.clearProcessing();
+                
+                // Unity에 알림 (만약 Unity가 궁금하다면)
+                window.Unity.call('N/MIDNIGHT_RESET_DONE:' + newDate);
+            },
+            
+            // Unity가 호출 — 캡쳐 완료 후 리셋하라는 신호
+            completeReset: function() {
+                const today = this.getTodayString();
+                this.performReset(today);
+            },
+            
+            // 시작
+            start: function() {
+                // 로드 시 1회 체크
+                this.checkAndResetIfNewDay();
+                
+                // 포커스 돌아올 때마다 체크 (앱 전환/화면 켜짐 등)
+                document.addEventListener('visibilitychange', function() {
+                    if (!document.hidden) {
+                        console.log('[Midnight] 포커스 복귀 → 날짜 체크');
+                        MidnightManager.checkAndResetIfNewDay();
+                    }
+                });
+                
+                console.log('[Midnight] 자정 체크 시스템 시작 (로드 + visibilitychange)');
+            }
+        };
+        
+        // ==================== 상태 보존 ====================
         const StateManager = {
             STORAGE_KEY: 'naverMapState',
             
@@ -202,6 +338,21 @@
             userLocation: null,
             isTrackingFromUnity: false,
             map: null,
+            
+            // ==================== Unity 호출용 자정 처리 ====================
+            
+            /// Unity에서 자정 감지 시 호출
+            /// 캡쳐 처리 중이면 스킵 (중복 방지)
+            triggerMidnightReset: function() {
+                console.log('[Bridge] Unity가 자정 리셋 요청');
+                MidnightManager.checkAndResetIfNewDay();
+            },
+            
+            /// Unity가 캡쳐 완료 후 호출 — 이제 라인 리셋해도 됨
+            completeMidnightReset: function() {
+                console.log('[Bridge] Unity 캡쳐 완료, 리셋 수행');
+                MidnightManager.completeReset();
+            },
             
             // ==================== 식물 마커 시스템 ====================
             
@@ -425,23 +576,18 @@
             
             // ⭐⭐⭐ 세그먼트 기반 부드러운 곡선 경로 시스템 ⭐⭐⭐
             
-            // 원본 GPS 포인트
             rawGPSPoints: [],
-            
-            // ⭐ 세그먼트 시스템
             SEGMENT_SIZE: 100,
             segments: [],
             activeSegmentPoints: [],
             activePolyline: null,
             
-            // 유효 좌표 확인
             isValidCoordinate: function(lat, lng) {
                 if (lat === 0 && lng === 0) return false;
                 if (lat < 33 || lat > 43 || lng < 124 || lng > 132) return false;
                 return true;
             },
             
-            // 점프 거리 체크
             isReasonableJump: function(lat, lng) {
                 if (this.rawGPSPoints.length === 0) return true;
                 var lastPoint = this.rawGPSPoints[this.rawGPSPoints.length - 1];
@@ -450,7 +596,6 @@
                 return true;
             },
             
-            // Catmull-Rom Spline 보간
             catmullRomSpline: function(p0, p1, p2, p3, t) {
                 var t2 = t * t;
                 var t3 = t2 * t;
@@ -464,7 +609,6 @@
                 };
             },
             
-            // 부드러운 경로 생성
             generateSmoothPath: function(points) {
                 if (points.length < 2) return points;
                 if (points.length === 2) return points;
@@ -497,7 +641,6 @@
                 return smoothPath;
             },
             
-            // ⭐⭐⭐ 세그먼트 기반 appendPoint ⭐⭐⭐
             appendPoint: function(lat, lng) {
                 if (typeof naver === 'undefined' || !naver.maps) return;
                 if (!this.isValidCoordinate(lat, lng)) return;
@@ -508,7 +651,6 @@
                 this.rawGPSPoints.push(newCoord);
                 routeCoordinates.push(newCoord);
                 
-                // 거리 업데이트
                 if (this.rawGPSPoints.length >= 2) {
                     var prev = this.rawGPSPoints[this.rawGPSPoints.length - 2];
                     var dist = calculateDistance(prev.lat(), prev.lng(), lat, lng);
@@ -516,16 +658,13 @@
                     document.getElementById('distance').textContent = Math.round(totalDistance);
                 }
                 
-                // 현재 세그먼트에 포인트 추가
                 this.activeSegmentPoints.push(newCoord);
                 
-                // 세그먼트 크기 도달 → 확정하고 새 세그먼트 시작
                 if (this.activeSegmentPoints.length >= this.SEGMENT_SIZE) {
                     this._finalizeActiveSegment();
-                    this.activeSegmentPoints = [newCoord]; // 연결점
+                    this.activeSegmentPoints = [newCoord];
                 }
                 
-                // 현재 세그먼트만 다시 그리기!
                 this._redrawActiveSegment();
                 
                 document.getElementById('pointCount').textContent = this.rawGPSPoints.length;
@@ -534,7 +673,6 @@
                             ' | seg: ' + this.segments.length + ' | active: ' + this.activeSegmentPoints.length);
             },
             
-            // 현재 세그먼트 확정
             _finalizeActiveSegment: function() {
                 if (this.activeSegmentPoints.length < 2) return;
                 
@@ -557,7 +695,6 @@
                             ' (' + this.activeSegmentPoints.length + 'pts)');
             },
             
-            // 현재 세그먼트만 다시 그리기
             _redrawActiveSegment: function() {
                 if (this.activeSegmentPoints.length < 2) return;
                 
@@ -574,7 +711,6 @@
                 });
             },
             
-            // 모든 세그먼트 정리
             _clearAllSegments: function() {
                 for (var i = 0; i < this.segments.length; i++) {
                     if (this.segments[i]) this.segments[i].setMap(null);
@@ -593,14 +729,12 @@
                 }
             },
             
-            // ⭐⭐⭐ 세그먼트 기반 drawRoute (복원/맵 열기용) ⭐⭐⭐
             drawRoute: function(pointsArray) {
                 if (typeof naver === 'undefined' || !naver.maps) return;
                 if (!Array.isArray(pointsArray)) {
                     try { pointsArray = JSON.parse(pointsArray); } catch (e) { return; }
                 }
                 
-                // 기존 세그먼트 모두 정리
                 this._clearAllSegments();
                 
                 this.rawGPSPoints = [];
@@ -629,7 +763,6 @@
                 
                 document.getElementById('distance').textContent = Math.round(totalDistance);
                 
-                // ⭐ 세그먼트 단위로 분할해서 그리기
                 var SEGMENT = this.SEGMENT_SIZE;
                 var totalPoints = validPoints.length;
                 
@@ -637,13 +770,11 @@
                     var end = Math.min(i + SEGMENT, totalPoints);
                     var segPoints = validPoints.slice(i, end);
                     
-                    // 이전 세그먼트 마지막 점을 연결점으로 포함
                     if (i > 0) {
                         segPoints.unshift(validPoints[i - 1]);
                     }
                     
                     if (end < totalPoints) {
-                        // 확정 세그먼트
                         if (segPoints.length >= 2) {
                             var smoothPath = this.generateSmoothPath(segPoints);
                             var polyline = new naver.maps.Polyline({
@@ -654,7 +785,6 @@
                             this.segments.push(polyline);
                         }
                     } else {
-                        // 마지막 → 활성 세그먼트
                         this.activeSegmentPoints = segPoints;
                         this._redrawActiveSegment();
                     }
@@ -706,6 +836,9 @@
             if (savedState) applyRestoredState(savedState);
             updateStatusDisplay();
             console.log('Map initialized');
+            
+            // ⭐ 자정 체크 시스템 시작
+            MidnightManager.start();
             
             setTimeout(function() {
                 window.location.href = 'toapp://mapready';
@@ -841,7 +974,6 @@
             if (isFloatingMode || routeCoordinates.length % 5 === 0) StateManager.saveState();
         }
 
-        // ⭐ 세그먼트 정리 포함
         function clearRoute() {
             routeCoordinates = [];
             if (window.NaverMapBridge) {
@@ -985,17 +1117,36 @@
             captureState.originalCenter = map.getCenter();
             captureState.originalZoom = map.getZoom();
             hideCaptureUI();
+            
+            // 지도 크기 재계산 (WebView 리사이즈 이슈 방지)
+            if (map && typeof map.refresh === 'function') {
+                map.refresh(true);
+            }
+            
             var bounds = new naver.maps.LatLngBounds();
             routeCoordinates.forEach(function(coord) { bounds.extend(coord); });
-            map.fitBounds(bounds, { top: 30, right: 30, bottom: 30, left: 30 });
+            map.fitBounds(bounds, { top: 80, right: 80, bottom: 80, left: 80 });
+            
+            // fitBounds 완료 대기 (타일 로딩 + 라인 렌더링 안정화)
             setTimeout(function() {
-                var info = { totalTiles: 1, zoom: map.getZoom(), cols: 1, rows: 1 };
-                window.Unity.call('N/CAPTURE_START:' + JSON.stringify(info));
+                // 지도 재갱신 한번 더 (타일 완전 로딩 보장)
+                if (map && typeof map.refresh === 'function') {
+                    map.refresh(true);
+                }
+                
                 setTimeout(function() {
-                    var tileData = { index: 0, row: 0, col: 0, total: 1 };
-                    window.Unity.call('N/CAPTURE_TILE:' + JSON.stringify(tileData));
-                }, 2000);
-            }, 500);
+                    var info = { totalTiles: 1, zoom: map.getZoom(), cols: 1, rows: 1 };
+                    console.log('[NaverMap] CAPTURE_START 전송:', info);
+                    window.Unity.call('N/CAPTURE_START:' + JSON.stringify(info));
+                    
+                    // Java가 initCapture로 WebView 크기 측정하는 시간
+                    setTimeout(function() {
+                        var tileData = { index: 0, row: 0, col: 0, total: 1 };
+                        console.log('[NaverMap] CAPTURE_TILE 전송:', tileData);
+                        window.Unity.call('N/CAPTURE_TILE:' + JSON.stringify(tileData));
+                    }, 2500);
+                }, 500);
+            }, 1500);
         };
 
         window.NaverMapBridge.onTileCaptured = function(tileIndex) {
