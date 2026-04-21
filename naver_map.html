@@ -88,17 +88,35 @@
             display: none;
         }
         
+        /* ⭐ 식물 마커 하이라이트 애니메이션 */
         @keyframes bounce {
-            0%, 100% { transform: translateY(0); }
-            25% { transform: translateY(-15px); }
-            50% { transform: translateY(0); }
-            75% { transform: translateY(-8px); }
+            0%, 100% {
+                transform: translateY(0);
+            }
+            25% {
+                transform: translateY(-15px);
+            }
+            50% {
+                transform: translateY(0);
+            }
+            75% {
+                transform: translateY(-8px);
+            }
         }
         
         @keyframes pulse {
-            0% { transform: scale(1); opacity: 1; }
-            50% { transform: scale(1.2); opacity: 0.8; }
-            100% { transform: scale(1); opacity: 1; }
+            0% {
+                transform: scale(1);
+                opacity: 1;
+            }
+            50% {
+                transform: scale(1.2);
+                opacity: 0.8;
+            }
+            100% {
+                transform: scale(1);
+                opacity: 1;
+            }
         }
         
         .plant-marker-highlight {
@@ -156,7 +174,7 @@
             console.log('FLOATING MODE ACTIVATED');
         }
         
-        // ==================== 상태 보존 ====================
+        // 상태 보존
         const StateManager = {
             STORAGE_KEY: 'naverMapState',
             
@@ -205,9 +223,13 @@
             
             // ==================== 식물 마커 시스템 ====================
             
+            // 식물 마커 저장용
             plantMarkers: {},
+            
+            // 식물 정보창
             plantInfoWindow: null,
             
+            // 식물 아이콘 이미지 (SVG)
             plantIcons: {
                 seed: 'data:image/svg+xml;charset=UTF-8,' + encodeURIComponent(
                     '<svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 32 32">' +
@@ -255,11 +277,12 @@
                     self.showPlantInfo(id, lat, lng, icon, visitCount);
                 });
                 this.plantMarkers[id] = marker;
+                console.log('[NaverMapBridge] Plant marker added:', id, icon);
             },
             
             updatePlantMarker: function(id, icon, visitCount) {
                 var marker = this.plantMarkers[id];
-                if (!marker) return;
+                if (!marker) { console.warn('[NaverMapBridge] Marker not found:', id); return; }
                 var iconSize;
                 switch(icon) {
                     case 'seed': iconSize = new naver.maps.Size(32, 32); break;
@@ -273,44 +296,68 @@
                     anchor: new naver.maps.Point(iconSize.width / 2, iconSize.height / 2)
                 });
                 marker.setTitle('방문: ' + visitCount + '회');
+                console.log('[NaverMapBridge] Plant marker updated:', id, icon);
             },
             
             removePlantMarker: function(id) {
                 var marker = this.plantMarkers[id];
-                if (marker) { marker.setMap(null); delete this.plantMarkers[id]; }
+                if (marker) {
+                    marker.setMap(null);
+                    delete this.plantMarkers[id];
+                    console.log('[NaverMapBridge] Plant marker removed:', id);
+                }
             },
             
             clearPlantMarkers: function() {
                 for (var id in this.plantMarkers) {
-                    if (this.plantMarkers.hasOwnProperty(id)) { this.plantMarkers[id].setMap(null); }
+                    if (this.plantMarkers.hasOwnProperty(id)) {
+                        this.plantMarkers[id].setMap(null);
+                    }
                 }
                 this.plantMarkers = {};
+                console.log('[NaverMapBridge] All plant markers cleared');
             },
             
             showPlantInfo: function(id, lat, lng, icon, visitCount) {
                 if (this.plantInfoWindow) { this.plantInfoWindow.close(); }
                 var stageText, nextText;
                 switch(icon) {
-                    case 'seed': stageText = '🌱 씨앗'; nextText = '다음 단계까지 ' + Math.max(0, 3 - visitCount) + '회 방문'; break;
-                    case 'sprout': stageText = '🌿 새싹'; nextText = '다음 단계까지 ' + Math.max(0, 10 - visitCount) + '회 방문'; break;
-                    case 'tree': stageText = '🌳 나무'; nextText = '최대 성장 완료!'; break;
-                    default: stageText = '🌱 씨앗'; nextText = '';
+                    case 'seed': 
+                        stageText = '🌱 씨앗'; 
+                        nextText = '다음 단계까지 ' + Math.max(0, 3 - visitCount) + '회 방문';
+                        break;
+                    case 'sprout': 
+                        stageText = '🌿 새싹'; 
+                        nextText = '다음 단계까지 ' + Math.max(0, 10 - visitCount) + '회 방문';
+                        break;
+                    case 'tree': 
+                        stageText = '🌳 나무'; 
+                        nextText = '최대 성장 완료!';
+                        break;
+                    default: 
+                        stageText = '🌱 씨앗';
+                        nextText = '';
                 }
                 var content = 
                     '<div style="padding: 10px; min-width: 150px; text-align: center;">' +
                     '<div style="font-size: 18px; font-weight: bold; margin-bottom: 8px;">' + stageText + '</div>' +
                     '<div style="font-size: 14px; color: #666; margin-bottom: 4px;">방문 횟수: ' + visitCount + '회</div>' +
-                    '<div style="font-size: 12px; color: #888;">' + nextText + '</div></div>';
+                    '<div style="font-size: 12px; color: #888;">' + nextText + '</div>' +
+                    '</div>';
                 this.plantInfoWindow = new naver.maps.InfoWindow({
-                    content: content, borderWidth: 1, borderColor: '#2E7D32',
-                    backgroundColor: '#fff', anchorSize: new naver.maps.Size(10, 10)
+                    content: content,
+                    borderWidth: 1,
+                    borderColor: '#2E7D32',
+                    backgroundColor: '#fff',
+                    anchorSize: new naver.maps.Size(10, 10)
                 });
                 this.plantInfoWindow.open(this.map, this.plantMarkers[id]);
             },
             
             highlightPlantMarker: function(id) {
                 var marker = this.plantMarkers[id];
-                if (!marker) return;
+                if (!marker) { console.warn('[NaverMapBridge] Marker not found for highlight:', id); return; }
+                console.log('[NaverMapBridge] Highlighting plant marker:', id);
                 var position = marker.getPosition();
                 if (this.map) { this.map.panTo(position); }
                 var markerElement = marker.getElement();
@@ -329,7 +376,10 @@
                         var marker = this.plantMarkers[id];
                         var pos = marker.getPosition();
                         var distance = this.calculatePlantDistance(lat, lng, pos.lat(), pos.lng());
-                        if (distance < nearestDistance) { nearestDistance = distance; nearestId = id; }
+                        if (distance < nearestDistance) {
+                            nearestDistance = distance;
+                            nearestId = id;
+                        }
                     }
                 }
                 if (nearestId) {
@@ -337,6 +387,7 @@
                     this.map.setCenter(marker.getPosition());
                     this.map.setZoom(17);
                     this.highlightPlantMarker(nearestId);
+                    console.log('[NaverMapBridge] Moved to nearest plant:', nearestId, nearestDistance.toFixed(0) + 'm');
                 }
             },
             
@@ -374,18 +425,23 @@
                 if (isFloatingMode && !isTracking && !autoStartTriggered && this.userLocation) {
                     autoStartTriggered = true;
                     startTracking();
-                    if (map) { map.setCenter(this.userLocation); map.setZoom(17); }
+                    if (map) {
+                        map.setCenter(this.userLocation);
+                        map.setZoom(17);
+                    }
                 }
                 
                 if (userMarker) {
                     userMarker.setPosition(this.userLocation);
                 } else if (map) {
                     userMarker = new naver.maps.Marker({
-                        position: this.userLocation, map: map,
+                        position: this.userLocation,
+                        map: map,
                         icon: {
                             content: '<div style="width:20px;height:20px;background:#4285F4;border-radius:50%;border:3px solid white;box-shadow:0 2px 6px rgba(0,0,0,0.3);"></div>',
                             anchor: new naver.maps.Point(13, 13)
-                        }, zIndex: 100
+                        },
+                        zIndex: 100
                     });
                 }
                 
@@ -411,7 +467,9 @@
             },
             
             moveToLocation: function(lat, lng) {
-                if (map && typeof naver !== 'undefined') { map.setCenter(new naver.maps.LatLng(lat, lng)); }
+                if (map && typeof naver !== 'undefined') {
+                    map.setCenter(new naver.maps.LatLng(lat, lng));
+                }
             },
             
             setZoom: function(level) { if (map) map.setZoom(level); },
@@ -423,47 +481,64 @@
             updateCurrentLocation: function(lat, lng) { updateCurrentMarker(lat, lng); },
             addRoutePoint: function(lat, lng) { addRoutePoint(lat, lng); },
             
-            // ⭐⭐⭐ 세그먼트 기반 부드러운 곡선 경로 시스템 ⭐⭐⭐
+            // ⭐⭐⭐ 부드러운 곡선 경로 시스템 ⭐⭐⭐
             
+            // 원본 GPS 포인트 저장 (보간용)
             rawGPSPoints: [],
-            SEGMENT_SIZE: 100,
-            segments: [],
-            activeSegmentPoints: [],
-            activePolyline: null,
             
+            // ⭐ 유효한 좌표인지 확인 (0,0 및 한국 범위 밖 필터링)
             isValidCoordinate: function(lat, lng) {
-                if (lat === 0 && lng === 0) return false;
-                if (lat < 33 || lat > 43 || lng < 124 || lng > 132) return false;
+                // 0,0 좌표 필터링
+                if (lat === 0 && lng === 0) {
+                    console.log('[NaverMap] ❌ Invalid: 0,0 coordinate');
+                    return false;
+                }
+                // 한국 범위 체크 (위도 33~43, 경도 124~132)
+                if (lat < 33 || lat > 43 || lng < 124 || lng > 132) {
+                    console.log('[NaverMap] ❌ Invalid: out of Korea range', lat, lng);
+                    return false;
+                }
                 return true;
             },
             
+            // ⭐ 점프 거리 체크 (너무 멀면 무시 - 운송수단 고려)
             isReasonableJump: function(lat, lng) {
                 if (this.rawGPSPoints.length === 0) return true;
+                
                 var lastPoint = this.rawGPSPoints[this.rawGPSPoints.length - 1];
                 var distance = calculateDistance(lastPoint.lat(), lastPoint.lng(), lat, lng);
-                if (distance > 300) return false;
+                
+                // 300m 초과 점프는 무시 (자전거/버스/지하철 고려)
+                if (distance > 300) {
+                    console.log('[NaverMap] ❌ Jump too far:', distance.toFixed(0) + 'm');
+                    return false;
+                }
                 return true;
             },
             
+            // Catmull-Rom Spline 보간
             catmullRomSpline: function(p0, p1, p2, p3, t) {
                 var t2 = t * t;
                 var t3 = t2 * t;
                 return {
-                    lat: 0.5 * ((2 * p1.lat) + (-p0.lat + p2.lat) * t +
+                    lat: 0.5 * ((2 * p1.lat) +
+                        (-p0.lat + p2.lat) * t +
                         (2 * p0.lat - 5 * p1.lat + 4 * p2.lat - p3.lat) * t2 +
                         (-p0.lat + 3 * p1.lat - 3 * p2.lat + p3.lat) * t3),
-                    lng: 0.5 * ((2 * p1.lng) + (-p0.lng + p2.lng) * t +
+                    lng: 0.5 * ((2 * p1.lng) +
+                        (-p0.lng + p2.lng) * t +
                         (2 * p0.lng - 5 * p1.lng + 4 * p2.lng - p3.lng) * t2 +
                         (-p0.lng + 3 * p1.lng - 3 * p2.lng + p3.lng) * t3)
                 };
             },
             
+            // 부드러운 경로 생성
             generateSmoothPath: function(points) {
                 if (points.length < 2) return points;
                 if (points.length === 2) return points;
                 
                 var smoothPath = [];
-                var segmentsPerPoint = 5;
+                var segmentsPerPoint = 5; // 포인트 사이 보간 개수
                 
                 for (var i = 0; i < points.length - 1; i++) {
                     var p0 = points[Math.max(0, i - 1)];
@@ -471,17 +546,20 @@
                     var p2 = points[Math.min(points.length - 1, i + 1)];
                     var p3 = points[Math.min(points.length - 1, i + 2)];
                     
+                    // 첫 포인트는 항상 추가
                     if (i === 0) {
                         smoothPath.push(new naver.maps.LatLng(p1.lat(), p1.lng()));
                     }
                     
+                    // 보간 포인트 추가
                     for (var j = 1; j <= segmentsPerPoint; j++) {
                         var t = j / segmentsPerPoint;
                         var interpolated = this.catmullRomSpline(
                             {lat: p0.lat(), lng: p0.lng()},
                             {lat: p1.lat(), lng: p1.lng()},
                             {lat: p2.lat(), lng: p2.lng()},
-                            {lat: p3.lat(), lng: p3.lng()}, t
+                            {lat: p3.lat(), lng: p3.lng()},
+                            t
                         );
                         smoothPath.push(new naver.maps.LatLng(interpolated.lat, interpolated.lng));
                     }
@@ -490,16 +568,78 @@
                 return smoothPath;
             },
             
+            // 마지막 구간만 부드럽게 업데이트
+            updateLastSegmentSmooth: function() {
+                var points = this.rawGPSPoints;
+                if (points.length < 2) return;
+                
+                // 마지막 4개 포인트로 보간
+                var startIdx = Math.max(0, points.length - 4);
+                var lastPoints = points.slice(startIdx);
+                
+                if (lastPoints.length < 2) return;
+                
+                // 새 구간의 보간 포인트 생성
+                var newSegment = [];
+                var segmentsPerPoint = 5;
+                
+                for (var i = 0; i < lastPoints.length - 1; i++) {
+                    var idx = startIdx + i;
+                    var p0 = points[Math.max(0, idx - 1)];
+                    var p1 = points[idx];
+                    var p2 = points[Math.min(points.length - 1, idx + 1)];
+                    var p3 = points[Math.min(points.length - 1, idx + 2)];
+                    
+                    for (var j = 1; j <= segmentsPerPoint; j++) {
+                        var t = j / segmentsPerPoint;
+                        var interpolated = this.catmullRomSpline(
+                            {lat: p0.lat(), lng: p0.lng()},
+                            {lat: p1.lat(), lng: p1.lng()},
+                            {lat: p2.lat(), lng: p2.lng()},
+                            {lat: p3.lat(), lng: p3.lng()},
+                            t
+                        );
+                        newSegment.push(new naver.maps.LatLng(interpolated.lat, interpolated.lng));
+                    }
+                }
+                
+                // 기존 path 업데이트 (마지막 구간 교체)
+                if (routePath && newSegment.length > 0) {
+                    var path = routePath.getPath();
+                    var removeCount = Math.min((lastPoints.length - 1) * segmentsPerPoint, path.length - 1);
+                    
+                    // 이전 보간 포인트 제거
+                    while (removeCount > 0 && path.length > 1) {
+                        path.pop();
+                        removeCount--;
+                    }
+                    
+                    // 새 보간 포인트 추가
+                    newSegment.forEach(function(coord) {
+                        path.push(coord);
+                    });
+                }
+            },
+            
             appendPoint: function(lat, lng) {
                 if (typeof naver === 'undefined' || !naver.maps) return;
-                if (!this.isValidCoordinate(lat, lng)) return;
-                if (!this.isReasonableJump(lat, lng)) return;
+                
+                // ⭐⭐⭐ 유효성 검사 추가 ⭐⭐⭐
+                if (!this.isValidCoordinate(lat, lng)) {
+                    return; // 0,0 또는 한국 밖 좌표 무시
+                }
+                
+                if (!this.isReasonableJump(lat, lng)) {
+                    return; // 100m 초과 점프 무시
+                }
                 
                 var newCoord = new naver.maps.LatLng(lat, lng);
                 
+                // 원본 GPS 포인트 저장
                 this.rawGPSPoints.push(newCoord);
                 routeCoordinates.push(newCoord);
                 
+                // 거리 업데이트
                 if (this.rawGPSPoints.length >= 2) {
                     var prev = this.rawGPSPoints[this.rawGPSPoints.length - 2];
                     var dist = calculateDistance(prev.lat(), prev.lng(), lat, lng);
@@ -507,145 +647,91 @@
                     document.getElementById('distance').textContent = Math.round(totalDistance);
                 }
                 
-                this.activeSegmentPoints.push(newCoord);
-                
-                if (this.activeSegmentPoints.length >= this.SEGMENT_SIZE) {
-                    this._finalizeActiveSegment();
-                    this.activeSegmentPoints = [newCoord];
+                // Polyline 생성/업데이트
+                if (this.rawGPSPoints.length === 2) {
+                    // 첫 Polyline 생성 (부드러운 경로)
+                    var smoothPath = this.generateSmoothPath(this.rawGPSPoints);
+                    routePath = new naver.maps.Polyline({
+                        map: map,
+                        path: smoothPath,
+                        strokeColor: '#4285F4',
+                        strokeOpacity: 0.9,
+                        strokeWeight: 6,
+                        strokeLineCap: 'round',
+                        strokeLineJoin: 'round'
+                    });
+                } else if (this.rawGPSPoints.length > 2) {
+                    // 마지막 구간만 부드럽게 업데이트
+                    this.updateLastSegmentSmooth();
                 }
                 
-                this._redrawActiveSegment();
-                
+                // 포인트 수 표시 업데이트
                 document.getElementById('pointCount').textContent = this.rawGPSPoints.length;
                 
                 console.log('[NaverMap] ✅ appendPoint: ' + lat.toFixed(6) + ', ' + lng.toFixed(6) + 
-                            ' | seg: ' + this.segments.length + ' | active: ' + this.activeSegmentPoints.length);
+                            ' | raw: ' + this.rawGPSPoints.length);
             },
             
-            _finalizeActiveSegment: function() {
-                if (this.activeSegmentPoints.length < 2) return;
-                
-                var smoothPath = this.generateSmoothPath(this.activeSegmentPoints);
-                
-                var polyline = new naver.maps.Polyline({
-                    map: map, path: smoothPath,
-                    strokeColor: '#4285F4', strokeOpacity: 0.9,
-                    strokeWeight: 6, strokeLineCap: 'round', strokeLineJoin: 'round'
-                });
-                
-                this.segments.push(polyline);
-                
-                if (this.activePolyline) {
-                    this.activePolyline.setMap(null);
-                    this.activePolyline = null;
-                }
-                
-                console.log('[NaverMap] 세그먼트 확정 #' + this.segments.length + 
-                            ' (' + this.activeSegmentPoints.length + 'pts)');
-            },
-            
-            _redrawActiveSegment: function() {
-                if (this.activeSegmentPoints.length < 2) return;
-                
-                if (this.activePolyline) {
-                    this.activePolyline.setMap(null);
-                }
-                
-                var smoothPath = this.generateSmoothPath(this.activeSegmentPoints);
-                
-                this.activePolyline = new naver.maps.Polyline({
-                    map: map, path: smoothPath,
-                    strokeColor: '#4285F4', strokeOpacity: 0.9,
-                    strokeWeight: 6, strokeLineCap: 'round', strokeLineJoin: 'round'
-                });
-            },
-            
-            _clearAllSegments: function() {
-                for (var i = 0; i < this.segments.length; i++) {
-                    if (this.segments[i]) this.segments[i].setMap(null);
-                }
-                this.segments = [];
-                
-                if (this.activePolyline) {
-                    this.activePolyline.setMap(null);
-                    this.activePolyline = null;
-                }
-                this.activeSegmentPoints = [];
-                
-                if (routePath) {
-                    routePath.setMap(null);
-                    routePath = null;
-                }
-            },
-            
+            // drawRoute는 복원용으로만 사용 (전체 다시 그리기 - 부드럽게)
             drawRoute: function(pointsArray) {
                 if (typeof naver === 'undefined' || !naver.maps) return;
                 if (!Array.isArray(pointsArray)) {
                     try { pointsArray = JSON.parse(pointsArray); } catch (e) { return; }
                 }
                 
-                this._clearAllSegments();
-                
+                // 원본 포인트 저장 (유효한 좌표만!)
                 this.rawGPSPoints = [];
                 routeCoordinates = [];
-                totalDistance = 0;
+                totalDistance = 0;  // ⭐ 거리 초기화
                 
                 var self = this;
                 var lastValidPoint = null;
-                var validPoints = [];
                 
                 pointsArray.forEach(function(p) {
-                    if (!self.isValidCoordinate(p.lat, p.lng)) return;
+                    // ⭐ 유효성 검사
+                    if (!self.isValidCoordinate(p.lat, p.lng)) {
+                        return; // 0,0 또는 한국 밖 무시
+                    }
                     
+                    // ⭐⭐⭐ 복원 시에는 점프 거리 1km로 완화 (백그라운드 긴 간격 허용) ⭐⭐⭐
                     if (lastValidPoint) {
                         var distance = calculateDistance(lastValidPoint.lat, lastValidPoint.lng, p.lat, p.lng);
-                        if (distance > 1000) return;
+                        if (distance > 1000) {  // 1km 초과만 무시
+                            console.log('[NaverMap] drawRoute skip jump:', distance.toFixed(0) + 'm (>1km)');
+                            return;
+                        }
+                        // ⭐ 거리 누적
                         totalDistance += distance;
                     }
                     
                     var coord = new naver.maps.LatLng(p.lat, p.lng);
                     self.rawGPSPoints.push(coord);
                     routeCoordinates.push(coord);
-                    validPoints.push(coord);
                     lastValidPoint = p;
                 });
                 
+                // ⭐ 거리 표시 업데이트
                 document.getElementById('distance').textContent = Math.round(totalDistance);
                 
-                var SEGMENT = this.SEGMENT_SIZE;
-                var totalPoints = validPoints.length;
+                // 부드러운 경로로 Polyline 생성
+                if (routePath) routePath.setMap(null);
                 
-                for (var i = 0; i < totalPoints; i += SEGMENT) {
-                    var end = Math.min(i + SEGMENT, totalPoints);
-                    var segPoints = validPoints.slice(i, end);
-                    
-                    if (i > 0) {
-                        segPoints.unshift(validPoints[i - 1]);
-                    }
-                    
-                    if (end < totalPoints) {
-                        if (segPoints.length >= 2) {
-                            var smoothPath = this.generateSmoothPath(segPoints);
-                            var polyline = new naver.maps.Polyline({
-                                map: map, path: smoothPath,
-                                strokeColor: '#4285F4', strokeOpacity: 0.9,
-                                strokeWeight: 6, strokeLineCap: 'round', strokeLineJoin: 'round'
-                            });
-                            this.segments.push(polyline);
-                        }
-                    } else {
-                        this.activeSegmentPoints = segPoints;
-                        this._redrawActiveSegment();
-                    }
+                if (this.rawGPSPoints.length > 1) {
+                    var smoothPath = this.generateSmoothPath(this.rawGPSPoints);
+                    routePath = new naver.maps.Polyline({
+                        map: map,
+                        path: smoothPath,
+                        strokeColor: '#4285F4',
+                        strokeOpacity: 0.9,
+                        strokeWeight: 6,
+                        strokeLineCap: 'round',
+                        strokeLineJoin: 'round'
+                    });
                 }
                 
                 document.getElementById('pointCount').textContent = this.rawGPSPoints.length;
                 
-                console.log('[NaverMap] drawRoute 세그먼트: ' + 
-                            this.segments.length + '개 확정 + 활성 ' + 
-                            this.activeSegmentPoints.length + 'pts, 총 ' + 
-                            totalPoints + '/' + pointsArray.length + ', ' + 
-                            Math.round(totalDistance) + 'm');
+                console.log('[NaverMap] drawRoute: ' + this.rawGPSPoints.length + '/' + pointsArray.length + ' points, ' + Math.round(totalDistance) + 'm');
             }
         };
 
@@ -686,6 +772,7 @@
             updateStatusDisplay();
             console.log('Map initialized');
             
+            // ⭐⭐⭐ 지도 초기화 완료 → Unity에 알림 ⭐⭐⭐
             setTimeout(function() {
                 window.location.href = 'toapp://mapready';
                 console.log('[NaverMap] Sent mapready to Unity');
@@ -709,11 +796,13 @@
                 if (routeCoordinates.length > 0) {
                     if (startMarker) startMarker.setMap(null);
                     startMarker = new naver.maps.Marker({
-                        position: routeCoordinates[0], map: map,
+                        position: routeCoordinates[0],
+                        map: map,
                         icon: {
                             content: '<div style="width:15px;height:15px;background:#00C73C;border-radius:50%;border:2px solid white;"></div>',
                             anchor: new naver.maps.Point(9, 9)
-                        }, zIndex: 90
+                        },
+                        zIndex: 90
                     });
                 }
                 
@@ -729,16 +818,19 @@
 
         function addFirstRoutePoint(lat, lng) {
             if (typeof naver === 'undefined') return;
+            
             const point = new naver.maps.LatLng(lat, lng);
             routeCoordinates.push(point);
             
             if (startMarker) startMarker.setMap(null);
             startMarker = new naver.maps.Marker({
-                position: point, map: map,
+                position: point,
+                map: map,
                 icon: {
                     content: '<div style="width:15px;height:15px;background:#00C73C;border-radius:50%;border:2px solid white;"></div>',
                     anchor: new naver.maps.Point(9, 9)
-                }, zIndex: 90
+                },
+                zIndex: 90
             });
             
             map.setCenter(point);
@@ -751,11 +843,13 @@
             const point = new naver.maps.LatLng(lat, lng);
             if (startMarker) startMarker.setMap(null);
             startMarker = new naver.maps.Marker({
-                position: point, map: map,
+                position: point,
+                map: map,
                 icon: {
                     content: '<div style="width:15px;height:15px;background:#00C73C;border-radius:50%;border:2px solid white;"></div>',
                     anchor: new naver.maps.Point(9, 9)
-                }, zIndex: 90
+                },
+                zIndex: 90
             });
         }
 
@@ -768,11 +862,13 @@
                 userMarker.setPosition(point);
             } else if (map) {
                 userMarker = new naver.maps.Marker({
-                    position: point, map: map,
+                    position: point,
+                    map: map,
                     icon: {
                         content: '<div style="width:20px;height:20px;background:#4285F4;border-radius:50%;border:3px solid white;"></div>',
                         anchor: new naver.maps.Point(13, 13)
-                    }, zIndex: 100
+                    },
+                    zIndex: 100
                 });
             }
         }
@@ -800,11 +896,13 @@
                 if (routeCoordinates.length > 0) {
                     if (endMarker) endMarker.setMap(null);
                     endMarker = new naver.maps.Marker({
-                        position: routeCoordinates[routeCoordinates.length - 1], map: map,
+                        position: routeCoordinates[routeCoordinates.length - 1],
+                        map: map,
                         icon: {
                             content: '<div style="width:15px;height:15px;background:#FF3E3E;border-radius:50%;border:2px solid white;"></div>',
                             anchor: new naver.maps.Point(9, 9)
-                        }, zIndex: 90
+                        },
+                        zIndex: 90
                     });
                 }
                 updateStatusDisplay();
@@ -822,9 +920,9 @@
 
         function clearRoute() {
             routeCoordinates = [];
+            // rawGPSPoints도 초기화
             if (window.NaverMapBridge) {
                 window.NaverMapBridge.rawGPSPoints = [];
-                window.NaverMapBridge._clearAllSegments();
             }
             isTracking = false;
             totalDistance = 0;
@@ -842,9 +940,13 @@
             
             if (routeCoordinates.length > 1) {
                 routePath = new naver.maps.Polyline({
-                    map: map, path: routeCoordinates,
-                    strokeColor: '#4285F4', strokeOpacity: 0.9,
-                    strokeWeight: 6, strokeLineCap: 'round', strokeLineJoin: 'round'
+                    map: map,
+                    path: routeCoordinates,
+                    strokeColor: '#4285F4',
+                    strokeOpacity: 0.9,
+                    strokeWeight: 6,
+                    strokeLineCap: 'round',
+                    strokeLineJoin: 'round'
                 });
             }
         }
@@ -898,7 +1000,8 @@
                 if (routeCoordinates.length > 0) {
                     if (startMarker) startMarker.setMap(null);
                     startMarker = new naver.maps.Marker({
-                        position: routeCoordinates[0], map: map,
+                        position: routeCoordinates[0],
+                        map: map,
                         icon: { content: '<div style="width:15px;height:15px;background:#00C73C;border-radius:50%;border:2px solid white;"></div>', anchor: new naver.maps.Point(9, 9) }
                     });
                 }
@@ -918,8 +1021,10 @@
         };
 
         function hideCaptureUI() {
+            console.log('Hiding UI for capture...');
             var panel = document.getElementById('info-panel');
             if (panel) panel.classList.add('capture-hidden');
+            
             var selectors = [
                 '[class*="btn_zoom"]', '[class*="zoom"]', '.naver-map-control',
                 '[class*="map_btn"]', '[class*="btn_"]', '[class*="ctrl"]', '[class*="control"]'
@@ -936,8 +1041,10 @@
         }
         
         function showCaptureUI() {
+            console.log('Showing UI after capture...');
             var panel = document.getElementById('info-panel');
             if (panel) panel.classList.remove('capture-hidden');
+            
             var selectors = [
                 '[class*="btn_zoom"]', '[class*="zoom"]', '.naver-map-control',
                 '[class*="map_btn"]', '[class*="btn_"]', '[class*="ctrl"]', '[class*="control"]'
@@ -954,11 +1061,13 @@
         }
 
         window.NaverMapBridge.startFullRouteCapture = function(zoom) {
-            if (captureState.isCapturing) return;
+            if (captureState.isCapturing) { console.log('Already capturing...'); return; }
             if (routeCoordinates.length < 2) {
+                console.log('No route to capture');
                 window.Unity.call('N/CAPTURE_ERROR:No route data');
                 return;
             }
+            console.log('========== STARTING SINGLE CAPTURE ==========');
             captureState.isCapturing = true;
             captureState.originalCenter = map.getCenter();
             captureState.originalZoom = map.getZoom();
@@ -977,11 +1086,13 @@
         };
 
         window.NaverMapBridge.onTileCaptured = function(tileIndex) {
+            console.log('Single tile captured!');
             window.Unity.call('N/CAPTURE_PROGRESS:100');
             setTimeout(function() { finishCapture(); }, 300);
         };
 
         function finishCapture() {
+            console.log('========== CAPTURE COMPLETE ==========');
             if (captureState.originalCenter && captureState.originalZoom) {
                 map.setCenter(captureState.originalCenter);
                 map.setZoom(captureState.originalZoom);
@@ -993,6 +1104,7 @@
 
         window.NaverMapBridge.cancelCapture = function() {
             if (captureState.isCapturing) {
+                console.log('Capture cancelled');
                 captureState.isCapturing = false;
                 if (captureState.originalCenter && captureState.originalZoom) {
                     map.setCenter(captureState.originalCenter);
@@ -1003,9 +1115,13 @@
             }
         };
 
+        // 초기화
         window.onload = function() {
-            if (typeof naver !== 'undefined' && naver.maps) { initMap(); }
-            else { setTimeout(initMap, 500); }
+            if (typeof naver !== 'undefined' && naver.maps) {
+                initMap();
+            } else {
+                setTimeout(initMap, 500);
+            }
         };
     </script>
 </body>
