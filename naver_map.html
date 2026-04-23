@@ -983,12 +983,12 @@
             console.log('[Capture] 시작점:', routeCoordinates[0].lat(), routeCoordinates[0].lng());
             console.log('[Capture] 끝점:', routeCoordinates[routeCoordinates.length-1].lat(), routeCoordinates[routeCoordinates.length-1].lng());
             
-            // fitBounds로 경로 전체 보이게 (여백 100px)
+            // fitBounds로 경로 전체 보이게 (여백 50px - 적당한 확대)
             map.fitBounds(bounds, { 
-                top: 100, 
-                right: 100, 
-                bottom: 100, 
-                left: 100 
+                top: 50, 
+                right: 50, 
+                bottom: 50, 
+                left: 50 
             });
             
             console.log('[Capture] fitBounds 호출 완료, 줌 레벨:', map.getZoom());
